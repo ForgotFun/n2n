@@ -1,0 +1,27 @@
+
+
+Edge node
+---------
+
+You need to start ad egde node on each PC you want to connect with the *same*
+community.
+
+0. become root
+
+1. create tun device
+# tunctl -t tun0
+
+3. enable the edge process
+# ./edge d tun0 -c mynetwork -k encryptme -a 1.2.3.4 -l a.b.c.d:xyw
+
+
+Supernode
+--------
+
+You need to start the supernode once
+
+1. ./supernode -l 1234 -v
+
+
+(C) 2007 - Luca Deri <deri@ntop.org>
+
