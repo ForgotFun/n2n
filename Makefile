@@ -24,4 +24,4 @@ $(N2N_LIB): $(N2N_OBJS)
 
 
 clean:
-	rm -f $(N2N_OBJS) $(N2N_LIB) $(APPS) *~
+	rm -rf $(N2N_OBJS) $(N2N_LIB) $(APPS) *.dSYM *~
