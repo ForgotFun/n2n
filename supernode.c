@@ -225,7 +225,7 @@ static void handle_packet(char *packet, u_int packet_len, struct sockaddr_in *se
       while(scan != NULL) {
 	if((strcmp(scan->community_name, hdr->community_name) == 0)
 	   && (is_dst_broad_multi_cast || (memcmp(scan->mac_addr, hdr->dst_mac, 6) == 0))
-	   && (memcmp(&sender, &scan->public_ip, sizeof(struct sockaddr_in)) /* No L3 self-send */)
+	   && (memcmp(sender, &scan->public_ip, sizeof(struct sockaddr_in)) /* No L3 self-send */)
 	   && (memcmp(hdr->dst_mac, hdr->src_mac, 6) /* No L2 self-send */)) {
 	  size_t len = packet_len;
 	  int data_sent_len = send_data(scan->sock_fd, scan->is_udp_socket, packet, &len, &scan->public_ip, 0);
