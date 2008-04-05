@@ -25,6 +25,7 @@ static u_int pkt_sent = 0;
 /* *********************************************** */
 
 static void help() {
+  print_n2n_version();
   printf("supernode -l <listening port> [-v] [-h]\n");
   exit(0);
 }
@@ -188,10 +189,13 @@ static void handle_packet(char *packet, u_int packet_len, struct sockaddr_in *se
 	     intoa(ntohl(sender->sin_addr.s_addr), buf, sizeof(buf)),
 	     ntohs(sender->sin_port));
 
-  if(packet_len < sizeof(struct n2n_packet_header))
+  if(packet_len < N2N_PKT_HDR_SIZE)
     traceEvent(TRACE_WARNING, "Received packet too short [len=%d]\n", packet_len);
   else {
-    struct n2n_packet_header *hdr = (struct n2n_packet_header*)packet;
+    struct n2n_packet_header hdr_storage;
+    struct n2n_packet_header *hdr = &hdr_storage;
+
+    unmarshall_n2n_packet_header( hdr, (u_int8_t *)packet );
 
     if(hdr->version != N2N_VERSION) {
       traceEvent(TRACE_WARNING,
@@ -362,7 +366,7 @@ int main(int argc, char* argv[]) {
   if(!(local_port))
     help();
 
-  if(init_n2n("") < 0) return(-1);
+  if(init_n2n( NULL, 0) < 0) return(-1);
 
   udp_sock_fd = open_socket(local_port, 1, 0);
   if(udp_sock_fd < 0) return(-1);

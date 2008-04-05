@@ -42,9 +42,23 @@ static void read_mac(char *ifname, char *mac_addr) {
 }
 
 /* ********************************** */
-
+/** @brief  Open and configure teh TAP device for packet read/write.
+ *
+ *  This routine creates the interface via the tuntap driver then uses ifconfig
+ *  to configure address/mask and MTU.
+ *
+ *  @param device      - [inout] a device info holder object
+ *  @param dev         - user-defined name for the new iface, 
+ *                       if NULL system will assign a name
+ *  @param device_ip   - address of iface
+ *  @param device_mask - netmask for device_ip
+ *
+ *  @return - negative value on error
+ *          - non-negative file-descriptor on success
+ */
 int tuntap_open(tuntap_dev *device, 
-	     char *dev, char *device_ip, char *device_mask) {
+                char *dev, /* user-definable interface name, eg. edge0 */
+                char *device_ip, char *device_mask) {
   char *tuntap_device = "/dev/net/tun", buf[128];
   struct ifreq ifr;
   int rc;
@@ -56,7 +70,7 @@ int tuntap_open(tuntap_dev *device,
   }
 
   memset(&ifr, 0, sizeof(ifr));
-  ifr.ifr_flags = IFF_TUN|IFF_NO_PI;
+  ifr.ifr_flags = IFF_TAP|IFF_NO_PI; /* Want a TAP device for layer 2 frames. */
   strncpy(ifr.ifr_name, dev, IFNAMSIZ);
   rc = ioctl(device->fd, TUNSETIFF, (void *)&ifr);
 
@@ -66,7 +80,11 @@ int tuntap_open(tuntap_dev *device,
     return -1;
   }
 
-  snprintf(buf, sizeof(buf), "ifconfig %s %s netmask %s mtu 1400 up",
+  /* REVISIT: BbMja7: MTU should be related to MTU of the interface the tuntap
+   * is built on.  The value 1400 assumes an eth iface with MTU 1500, but would
+   * fail for ppp at mtu=576.
+   */
+  snprintf(buf, sizeof(buf), "/sbin/ifconfig %s %s netmask %s mtu 1400 up",
 	   ifr.ifr_name, device_ip, device_mask);
   system(buf);
   printf("-> %s\n", buf);

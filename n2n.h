@@ -114,12 +114,14 @@ typedef struct tuntap_dev {
 #define COMMUNITY_LEN           16
 #define MIN_COMPRESSED_PKT_LEN  32
 
+/* Maximum enum value is 255 due to marshalling into 1 byte */
 enum packet_type {
   packet_unreliable_data = 0,  /* no ACK needed */
   packet_reliable_data,    /* needs ACK     */
   packet_ping,
   packet_pong
 };
+
 
 struct n2n_packet_header {
   u_int8_t version, msg_type, ttl, sent_by_supernode;
@@ -129,6 +131,12 @@ struct n2n_packet_header {
   u_int32_t sequence_id;
   u_int32_t crc; // FIX - va gestito il CRC/md5 per beccare pacchetti forgiati
 };
+
+int marshall_n2n_packet_header( u_int8_t * buf, const struct n2n_packet_header * hdr );
+int unmarshall_n2n_packet_header( struct n2n_packet_header * hdr, const u_int8_t * buf );
+
+#define N2N_PKT_HDR_SIZE (sizeof(struct n2n_packet_header))
+
 
 struct peer_info {
   char community_name[16], mac_addr[6];
@@ -203,7 +211,7 @@ extern char broadcast_addr[6];
 extern char multicast_addr[6];
 
 /* Functions */
-extern int  init_n2n(char *encrypt_pwd);
+extern int  init_n2n(u_int8_t *encrypt_pwd, u_int32_t encrypt_pwd_len );
 extern void term_n2n();
 extern void send_ack(int sock_fd, u_char is_udp_socket,
 		     u_int16_t last_rcvd_seq_id,
@@ -246,5 +254,10 @@ extern u_int send_data(int sock_fd,  u_char is_udp_socket,
 extern u_int8_t is_multi_broadcast(char *dest_mac);
 extern char* msg_type2str(u_short msg_type);
 extern void hexdump(char *buf, u_int len);
+
+void print_n2n_version();
+
+/* version.c */
+extern char *version, *osName, *buildDate;
 
 #endif /* _N2N_H_ */

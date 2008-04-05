@@ -48,19 +48,28 @@ char *encrypt_key = NULL;
 /* *********************************************** */
 
 static void help() {
+  print_n2n_version();
+
   printf("edge "
 #ifdef __linux__
 	 "-d <tun device> "
 #endif
 	 "-a <tun IP address> "
-	 "-c <community> -k <encrypt key> [-t] [-l <supernode host:port>] [-r] [-v] [-h]\n");
+	 "-c <community> "
+	 "-k <encrypt key> "
+	 "\n"
+	 "-l <supernode host:port> "
+	 "[-p <local port>] "
+	 "[-t] [-r] [-v] [-h]\n");
 
-  printf("-c <community>      | n2n community name\n");
-  printf("-k <encrypt key>    | Encryption key (ASCII)\n");
-  printf("-t                  | Use http tunneling\n");
-  printf("-r                  | Enable n2n routing\n");
-  printf("-v                  | Verbose\n");
-  
+  printf("-a <tun IP address>      | n2n IP address\n");
+  printf("-c <community>           | n2n community name\n");
+  printf("-k <encrypt key>         | Encryption key (ASCII)\n");
+  printf("-l <supernode host:port> | Supernode IP:port\n");
+  printf("-p <local port>          | Local port used for connecting to supernode\n");
+  printf("-t                       | Use http tunneling\n");
+  printf("-r                       | Enable n2n routing\n");
+  printf("-v                       | Verbose\n");
 
   exit(0);
 }
@@ -87,18 +96,27 @@ static int build_gratuitous_arp(char *buffer, u_short buffer_len) {
 /* *********************************************** */
 
 static void send_register(int sock, u_char is_udp_socket,
-		   struct sockaddr_in *remote_peer, u_char is_ack) {
+			  struct sockaddr_in *remote_peer, u_char is_ack) {
   struct n2n_packet_header hdr;
+  char pkt[N2N_PKT_HDR_SIZE];
   size_t len = sizeof(hdr);
   char ip_buf[32];
+
+  traceEvent(TRACE_INFO, "Send registration message to family=%d %s:%d",
+             remote_peer->sin_family,
+	     intoa(ntohl(remote_peer->sin_addr.s_addr), ip_buf, sizeof(ip_buf)),
+	     ntohs(remote_peer->sin_port));
 
   fill_standard_header_fields(sock, is_udp_socket, &hdr, (char*)device.mac_addr);
   hdr.sent_by_supernode = 0;
   hdr.msg_type = (is_ack == 0) ? MSG_TYPE_REGISTER : MSG_TYPE_REGISTER_ACK;
   memcpy(hdr.community_name, community_name, COMMUNITY_LEN);
-  send_packet(sock, is_udp_socket, (char*)&hdr, &len, remote_peer, 1);
 
-  traceEvent(TRACE_INFO, "Sent registration message to %s:%d",
+  marshall_n2n_packet_header( (u_int8_t *)pkt, &hdr );
+  send_packet(sock, is_udp_socket, pkt, &len, remote_peer, 1);
+
+  traceEvent(TRACE_INFO, "Sent registration message to family=%d %s:%d",
+             remote_peer->sin_family,
 	     intoa(ntohl(remote_peer->sin_addr.s_addr), ip_buf, sizeof(ip_buf)),
 	     ntohs(remote_peer->sin_port));
 }
@@ -106,24 +124,29 @@ static void send_register(int sock, u_char is_udp_socket,
 /* *********************************************** */
 
 static void send_deregister(int sock, u_char is_udp_socket,
-		     struct sockaddr_in *remote_peer) {
+			    struct sockaddr_in *remote_peer) {
   struct n2n_packet_header hdr;
+  char pkt[N2N_PKT_HDR_SIZE];
   size_t len = sizeof(hdr);
 
   fill_standard_header_fields(sock, is_udp_socket,&hdr, (char*)device.mac_addr);
   hdr.sent_by_supernode = 0;
   hdr.msg_type = MSG_TYPE_DEREGISTER;
   memcpy(hdr.community_name, community_name, COMMUNITY_LEN);
-  send_packet(sock, is_udp_socket, (char*)&hdr, &len, remote_peer, 1);
+
+  marshall_n2n_packet_header( (u_int8_t *)pkt, &hdr );
+  send_packet(sock, is_udp_socket, pkt, &len, remote_peer, 1);
 }
 
 /* *********************************************** */
 
 static void update_peer_address(int sock_fd, u_char is_udp_socket, char *mac_address,
-			 struct sockaddr_in *public_ip, time_t when) {
+				struct sockaddr_in *public_ip, time_t when) {
   struct peer_info *scan = known_peers;
   u_char found = 0;
-  char mac_buf[32], ip_buf[32];
+  char mac_buf[32];
+  char ip_buf[32];
+  char ip_buf2[32];
 
   while(scan != NULL) {
     if(memcmp(mac_address, scan->mac_addr, 6) == 0) {
@@ -134,13 +157,18 @@ static void update_peer_address(int sock_fd, u_char is_udp_socket, char *mac_add
   }
 
   if(!found) {
+    /* This peer not found - add it to the list */
     scan = (struct peer_info*)calloc(1, sizeof(struct peer_info));
     if(!scan) {
       traceEvent(TRACE_WARNING, "Not enough memory");
       return;
     }
 
+    memset(scan, 0, sizeof(scan) ); /* make sure it is all zeroed so we don't get random effects */
+
     memcpy(scan->mac_addr, mac_address, 6);
+
+    /* Add the new scan to the head of the list. */
     scan->next = known_peers;
     known_peers = scan;
 
@@ -150,16 +178,35 @@ static void update_peer_address(int sock_fd, u_char is_udp_socket, char *mac_add
 	       ntohs(public_ip->sin_port));
   }
 
-  memcpy(&scan->public_ip, public_ip, sizeof(struct sockaddr_in));
+  if ( 0 != memcmp( &(scan->public_ip), public_ip, sizeof(struct sockaddr_in) ) ) {
+    /* The registration has changed or is new */
+
+    if ( found ) {
+      traceEvent(TRACE_INFO, "Update peer [mac=%s][ip=(%s:%d)->(%s:%d)] - sending REGISTER",
+		 macaddr_str(mac_address, mac_buf, sizeof(mac_buf)),
+		 intoa(ntohl(scan->public_ip.sin_addr.s_addr), ip_buf, sizeof(ip_buf)),
+		 ntohs(scan->public_ip.sin_port),
+		 intoa(ntohl(public_ip->sin_addr.s_addr), ip_buf2, sizeof(ip_buf2)),
+		 ntohs(public_ip->sin_port)
+		 );
+    } else {
+      traceEvent(TRACE_INFO, "New peer [mac=%s][ip=(%s:%d)] - sending REGISTER",
+		 macaddr_str(mac_address, mac_buf, sizeof(mac_buf)),
+		 intoa(ntohl(public_ip->sin_addr.s_addr), ip_buf2, sizeof(ip_buf2)),
+		 ntohs(public_ip->sin_port)
+		 );
+    }
+
+    /* Store the new IP address and port */
+    memcpy(&scan->public_ip, public_ip, sizeof(struct sockaddr_in));
+
+    /* Force REGISTER packet to new IP address and port */
+    send_register(sock_fd, is_udp_socket, public_ip, 0);
+  }
 
   if(when > 0) {
     scan->last_seen = when;
-    traceEvent(TRACE_INFO, "Update peer [mac=%s][ip=%s:%d] last seen",
-	       macaddr_str(mac_address, mac_buf, sizeof(mac_buf)),
-	       intoa(ntohl(public_ip->sin_addr.s_addr), ip_buf, sizeof(ip_buf)),
-	       ntohs(public_ip->sin_port));
-  } else
-    send_register(sock_fd, is_udp_socket, public_ip, 0);
+  }
 }
 
 /* *********************************************** */
@@ -178,6 +225,8 @@ static void check_address_duplication(int sock_fd, u_char is_udp_socket) {
 
 static void update_registrations(int sock_fd, u_char is_udp_socket) {
   struct peer_info *scan;
+
+  traceEvent(TRACE_INFO, "update_registrations" );
 
   if(time(NULL) < (last_register+REGISTER_FREQUENCY)) return; /* Too early */
 
@@ -228,68 +277,72 @@ static const struct option long_options[] = {
 static void send_packet2net(int sock_fd, u_char is_udp_socket,
 			    char *decrypted_msg, size_t len,
 			    u_char allow_routed_packets) {
-   char ip_buf[32];
-   char packet[2048];
-   int data_sent_len;
-   struct n2n_packet_header *hdr;
-   struct sockaddr_in destination;
-   char mac_buf[32], mac2_buf[32];
+  char ip_buf[32];
+  char packet[2048];
+  int data_sent_len;
+  struct n2n_packet_header hdr;
+  struct sockaddr_in destination;
+  char mac_buf[32], mac2_buf[32];
 
-   /* Discard IP packets that are not originated by this hosts */
-   if(!allow_routed_packets) {
-     struct ether_header *eh = (struct ether_header*)decrypted_msg;
-     
-     if(ntohs(eh->ether_type) == 0x0800) {
-       struct ip *the_ip = (struct ip*)(decrypted_msg+sizeof(struct ether_header));
-       
-       if(the_ip->ip_src.s_addr != device.ip_addr) {
-	 /* This is a packet that needs to be routed */
-	 traceEvent(TRACE_INFO, "Discarding routed packet");
-	 return;
-       } else {
-	 /* This packet is originated by us */	 
-	 /* traceEvent(TRACE_INFO, "Sending non-routed packet"); */
-       }
-     }     
-   }
+  /* Discard IP packets that are not originated by this hosts */
+  if(!allow_routed_packets) {
+    struct ether_header *eh = (struct ether_header*)decrypted_msg;
 
-   len = TwoFishEncryptRaw((char*)decrypted_msg,
-			   &packet[sizeof(struct n2n_packet_header)], len, tf);
+    if(ntohs(eh->ether_type) == 0x0800) {
+      struct ip *the_ip = (struct ip*)(decrypted_msg+sizeof(struct ether_header));
 
-   hdr = (struct n2n_packet_header*)packet;
-   fill_standard_header_fields(sock_fd, is_udp_socket,
-			       hdr, (char*)device.mac_addr);
-   hdr->msg_type = MSG_TYPE_PACKET;
-   hdr->sent_by_supernode = 0;
-   memcpy(hdr->community_name, community_name, COMMUNITY_LEN);
-   memcpy(hdr->dst_mac, decrypted_msg, 6);
-   len += sizeof(struct n2n_packet_header);
+      if(the_ip->ip_src.s_addr != device.ip_addr) {
+	/* This is a packet that needs to be routed */
+	traceEvent(TRACE_INFO, "Discarding routed packet");
+	return;
+      } else {
+	/* This packet is originated by us */
+	/* traceEvent(TRACE_INFO, "Sending non-routed packet"); */
+      }
+    }
+  }
 
-   if(find_peer_destination(&packet[sizeof(struct n2n_packet_header)], &destination))
-     traceEvent(TRACE_INFO, "** Using direct peer communication [dst_mac=%s][dest=%s:%d]",
-		macaddr_str(&packet[sizeof(struct n2n_packet_header)], mac_buf, sizeof(mac_buf)),
-		intoa(ntohl(destination.sin_addr.s_addr), ip_buf, sizeof(ip_buf)),
-		ntohs(destination.sin_port));
-   else
-     traceEvent(TRACE_INFO, "** Using supernode peer communication [src_mac=%s][dst_mac=%s]",
-		macaddr_str(&packet[sizeof(struct n2n_packet_header)+6], mac_buf, sizeof(mac_buf)),
-		macaddr_str(&packet[sizeof(struct n2n_packet_header)], mac2_buf, sizeof(mac2_buf))
-		);
+  /* Encrypt "decrypted_msg" into the second half of the n2n packet. */
+  len = TwoFishEncryptRaw((u_int8_t *)decrypted_msg,
+			  (u_int8_t *)&packet[N2N_PKT_HDR_SIZE], len, tf);
 
-   data_sent_len = reliable_sendto(sock_fd, is_udp_socket, packet, &len, &destination, 1);
+  /* Add the n2n header to the start of the n2n packet. */
+  fill_standard_header_fields(sock_fd, is_udp_socket,
+			      &hdr, (char*)device.mac_addr);
+  hdr.msg_type = MSG_TYPE_PACKET;
+  hdr.sent_by_supernode = 0;
+  memcpy(hdr.community_name, community_name, COMMUNITY_LEN);
+  memcpy(hdr.dst_mac, decrypted_msg, 6);
 
-   if(data_sent_len != len)
-     traceEvent(TRACE_WARNING, "sendto() [sent=%d][attempted_to_send=%d] [%s]\n",
-		data_sent_len, len, strerror(errno));
-   else {
-     pkt_sent++;
-     traceEvent(TRACE_INFO, "Sent message to supernode");
-   }
- }
+  marshall_n2n_packet_header( (u_int8_t *)packet, &hdr );
+
+  len += N2N_PKT_HDR_SIZE;
+
+  if(find_peer_destination(&packet[N2N_PKT_HDR_SIZE], &destination))
+    traceEvent(TRACE_INFO, "** Using direct peer communication [dst_mac=%s][dest=%s:%d]",
+	       macaddr_str(&packet[N2N_PKT_HDR_SIZE], mac_buf, sizeof(mac_buf)),
+	       intoa(ntohl(destination.sin_addr.s_addr), ip_buf, sizeof(ip_buf)),
+	       ntohs(destination.sin_port));
+  else
+    traceEvent(TRACE_INFO, "** Using supernode peer communication [src_mac=%s][dst_mac=%s]",
+	       macaddr_str(&packet[N2N_PKT_HDR_SIZE+6], mac_buf, sizeof(mac_buf)),
+	       macaddr_str(&packet[N2N_PKT_HDR_SIZE], mac2_buf, sizeof(mac2_buf))
+	       );
+
+  data_sent_len = reliable_sendto(sock_fd, is_udp_socket, packet, &len, &destination, 1);
+
+  if(data_sent_len != len)
+    traceEvent(TRACE_WARNING, "sendto() [sent=%d][attempted_to_send=%d] [%s]\n",
+	       data_sent_len, len, strerror(errno));
+  else {
+    pkt_sent++;
+    traceEvent(TRACE_INFO, "Sent message to supernode");
+  }
+}
 
 /* ***************************************************** */
 
-static 
+static
 #ifdef WIN32
 DWORD tunReadThread(LPVOID lpArg )
 #else
@@ -309,15 +362,15 @@ DWORD tunReadThread(LPVOID lpArg )
       traceEvent(TRACE_WARNING, "read()=%d [%d/%s]\n",
 		 len, errno, strerror(errno));
     else
-      send_packet2net(edge_sock_fd, is_udp_sock, (char*)decrypted_msg, 
+      send_packet2net(edge_sock_fd, is_udp_sock, (char*)decrypted_msg,
 		      len, allow_routing);
   }
 
   return(
 #ifdef WIN32
-	  (DWORD)
+	 (DWORD)
 #endif
-	  NULL);
+	 NULL);
 }
 
 /* ***************************************************** */
@@ -348,7 +401,7 @@ static void startTunReadThread() {
  * Return: 0 = ok, -1 = invalid packet
  *
  */
-static int check_received_packet(tuntap_dev *dev, char *pkt, 
+static int check_received_packet(tuntap_dev *dev, char *pkt,
 				 u_int pkt_len, u_char allow_routed_packets) {
 
   if(pkt_len == 42) {
@@ -361,7 +414,7 @@ static int check_received_packet(tuntap_dev *dev, char *pkt,
       traceEvent(TRACE_WARNING, "Bounced packet received: supernode bug?");
       return(0);
     }
-    
+
     traceEvent(TRACE_ERROR, "Duplicate address found. Your IP is used by MAC %02X:%02X:%02X:%02X:%02X:%02X",
 	       pkt[22+0] & 0xFF, pkt[22+1] & 0xFF, pkt[22+2] & 0xFF,
 	       pkt[22+3] & 0xFF, pkt[22+4] & 0xFF, pkt[22+5] & 0xFF);
@@ -369,20 +422,20 @@ static int check_received_packet(tuntap_dev *dev, char *pkt,
   } else if(pkt_len > 32 /* IP + Ethernet */) {
     /* Check if this packet is for us or if it's routed */
     struct ether_header *eh = (struct ether_header*)pkt;
-    
+
     if(ntohs(eh->ether_type) == 0x0800) {
       struct ip *the_ip = (struct ip*)(pkt+sizeof(struct ether_header));
 
       if((the_ip->ip_dst.s_addr != device.ip_addr)
 	 && ((the_ip->ip_dst.s_addr & device.device_mask) != (device.ip_addr & device.device_mask))) /* Not a broadcast */
 	{
-	char ip_buf[32], ip_buf2[32];
+	  char ip_buf[32], ip_buf2[32];
 
-	/* This is a packet that needs to be routed */
-	traceEvent(TRACE_INFO, "Discarding routed packet [rcvd=%s][expected=%s]", 
-		   intoa(ntohl(the_ip->ip_dst.s_addr), ip_buf, sizeof(ip_buf)),
-		   intoa(ntohl(device.ip_addr), ip_buf2, sizeof(ip_buf2)));
-      } else {
+	  /* This is a packet that needs to be routed */
+	  traceEvent(TRACE_INFO, "Discarding routed packet [rcvd=%s][expected=%s]",
+		     intoa(ntohl(the_ip->ip_dst.s_addr), ip_buf, sizeof(ip_buf)),
+		     intoa(ntohl(device.ip_addr), ip_buf2, sizeof(ip_buf2)));
+	} else {
 	/* This packet is for us */
 
 	/* traceEvent(TRACE_INFO, "Received non-routed packet"); */
@@ -400,19 +453,16 @@ static int check_received_packet(tuntap_dev *dev, char *pkt,
 /* ***************************************************** */
 
 int main(int argc, char* argv[]) {
-  int opt;
+  int opt, local_port = 0 /* any port */;
   char *tuntap_dev_name = NULL, *ip_addr = NULL, buf[32];
 
 #ifdef WIN32
   tuntap_dev_name = "";
 #endif
   memset(&supernode, 0, sizeof(supernode));
-  supernode.sin_family = AF_INET;
-  supernode.sin_port = htons(SUPERNODE_PORT);
-  supernode.sin_addr.s_addr = inet_addr(SUPERNODE_IP);
 
   optarg = NULL;
-  while((opt = getopt_long(argc, argv, "k:a:c:d:l:vhrt", long_options, NULL)) != EOF) {
+  while((opt = getopt_long(argc, argv, "k:a:c:d:l:p:vhrt", long_options, NULL)) != EOF) {
     switch (opt) {
     case 'a':
       ip_addr = strdup(optarg);
@@ -451,6 +501,9 @@ int main(int argc, char* argv[]) {
     case 't': /* Use HTTP tunneling */
       is_udp_sock = 0;
       break;
+    case 'p':
+      local_port = atoi(optarg);
+      break;
     case 'h': /* help */
       help();
       break;
@@ -464,20 +517,24 @@ int main(int argc, char* argv[]) {
 #ifdef __linux__
        tuntap_dev_name &&
 #endif
-       community_name && 
+       community_name &&
        ip_addr &&
+       (supernode.sin_addr.s_addr != 0) &&
        encrypt_key))
     help();
 
-  traceEvent(TRACE_NORMAL, "Using supernode %s:%d", 
-		  intoa(ntohl(supernode.sin_addr.s_addr), buf, sizeof(buf)),
-		  ntohs(supernode.sin_port));
-
-  if(init_n2n(encrypt_key) < 0) return(-1);
+  traceEvent(TRACE_NORMAL, "Using supernode %s:%d",
+	     intoa(ntohl(supernode.sin_addr.s_addr), buf, sizeof(buf)),
+	     ntohs(supernode.sin_port));
+  
+  if(local_port > 0)
+    traceEvent(TRACE_NORMAL, "Binding to local port %d", local_port);
+  
+  if(init_n2n( (u_int8_t *)encrypt_key, strlen(encrypt_key) ) < 0) return(-1);
   if(tuntap_open(&device, tuntap_dev_name, ip_addr, "255.255.255.0") < 0)
     return(-1);
 
-  edge_sock_fd = open_socket(0 /* any port */, is_udp_sock, 0);
+  edge_sock_fd = open_socket(local_port, is_udp_sock, 0);
   if(edge_sock_fd < 0) return(-1);
 
   if(!is_udp_sock) {
@@ -532,10 +589,13 @@ int main(int argc, char* argv[]) {
 	  if(len <= 0)
 	    traceEvent(TRACE_WARNING, "receive_data()=%d [%s]\n", len, strerror(errno));
 	  else {
-	    if(len < sizeof(struct n2n_packet_header))
+	    if(len < N2N_PKT_HDR_SIZE)
 	      traceEvent(TRACE_WARNING, "received packet too short [len=%d]\n", len);
 	    else {
-	      struct n2n_packet_header *hdr = (struct n2n_packet_header*)packet;
+              struct n2n_packet_header hdr_storage;
+              struct n2n_packet_header *hdr = &hdr_storage;
+
+              unmarshall_n2n_packet_header( hdr, (u_int8_t *)packet );
 
 	      traceEvent(TRACE_INFO, "Received message [msg_type=%s] from %s [dst mac=%s]",
 			 msg_type2str(hdr->msg_type),
@@ -561,16 +621,17 @@ int main(int argc, char* argv[]) {
 		    continue;
 		  }
 
-		  len -= sizeof(struct n2n_packet_header);
+		  len -= N2N_PKT_HDR_SIZE;
 
 		  /* Decrypt message first */
-		  len = TwoFishDecryptRaw(&packet[sizeof(struct n2n_packet_header)], decrypted_msg, len, tf);
+		  len = TwoFishDecryptRaw((u_int8_t *)&packet[N2N_PKT_HDR_SIZE],
+                                          (u_int8_t *)decrypted_msg, len, tf);
 
 		  if(len > 0) {
 		    if(check_received_packet(&device, decrypted_msg, len, allow_routing) == 0) {
-		      update_peer_address(edge_sock_fd, is_udp_sock, hdr->src_mac, &hdr->public_ip, 0);
+		      update_peer_address(edge_sock_fd, is_udp_sock, hdr->src_mac, &hdr->public_ip, time(NULL));
 		      data_sent_len = tuntap_write(&device, (u_char*)decrypted_msg, len);
-		      
+
 		      if(data_sent_len != len)
 			traceEvent(TRACE_WARNING, "tuntap_write() [sent=%d][attempted_to_send=%d] [%s]\n",
 				   data_sent_len, len, strerror(errno));

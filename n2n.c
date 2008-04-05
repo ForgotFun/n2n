@@ -13,11 +13,17 @@
  *
  * You should have received a copy of the GNU General Public License
  * along with this program; if not, see <http://www.gnu.org/licenses/>
-*/
+ *
+ * Code contributions courtesy of:
+ * Richard Andrews <bbmaj7@yahoo.com.au>
+ *
+ */
 
 #include "n2n.h"
 
 #include "minilzo.h"
+
+#include <assert.h>
 
 char broadcast_addr[6] = { 0xFF, 0xFF, 0xFF, 0xFF, 0xFF, 0xFF };
 char multicast_addr[6] = { 0x01, 0x00, 0x05, 0x00, 0x00, 0x00 }; /* First 3 bytes are meaningful */
@@ -28,12 +34,183 @@ TWOFISH *tf;
 
 /* ************************************** */
 
-int init_n2n(char *encrypt_pwd) {
+static void print_header( const char * msg, const struct n2n_packet_header * hdr )
+{
+  char buf[32], buf2[32];
+
+  traceEvent(TRACE_INFO, "%s hdr: public_ip=(%d)%s:%d, private_ip=(%d)%s:%d", msg, 
+	     hdr->public_ip.sin_family,
+	     intoa(ntohl(hdr->public_ip.sin_addr.s_addr), buf, sizeof(buf)),  
+	     ntohs(hdr->public_ip.sin_port),
+	     hdr->private_ip.sin_family, 
+	     intoa(ntohl(hdr->private_ip.sin_addr.s_addr), buf2, sizeof(buf2)), 
+	     ntohs(hdr->private_ip.sin_port)
+	     );
+}
+
+/* ************************************** */
+
+static
+int marshall_sockaddr_in( u_int8_t * buf, const struct sockaddr_in * s )
+{
+  /* REVISIT: only IPv4 supported */
+
+  /* Write family (2-bytes), port (2-bytes), address (4-bytes) all in network order.
+   *
+   * family is stored in native order, port and address are already in network order.
+   */
+
+  u_int16_t * nu16 = (u_int16_t *)buf;
+  *nu16 = htons( s->sin_family );
+  buf += 2;
+
+  memcpy( buf, &(s->sin_port), 2 ); /* already in network order */
+  buf += 2;
+
+  memcpy( buf, &(s->sin_addr.s_addr), 4 ); /* already in network order */
+  buf += 4;
+
+  return 8; /* bytes written */
+}
+
+/* ************************************** */
+
+static
+int marshall_uint32( u_int8_t * buf, u_int32_t val )
+{
+  u_int32_t * nu32 = (u_int32_t *)buf;
+  *nu32 = htonl(val);
+
+  return 4;
+}
+
+/* ************************************** */
+
+int marshall_n2n_packet_header( u_int8_t * buf, const struct n2n_packet_header * hdr )
+{
+  u_int8_t * bufStart = buf;
+
+  print_header( "Marshalling ", hdr );
+
+  *buf = hdr->version;
+  ++buf;
+
+  *buf = hdr->msg_type;
+  ++buf;
+
+  *buf = hdr->ttl;
+  ++buf;
+
+  *buf = hdr->sent_by_supernode;
+  ++buf;
+
+  memcpy( buf, hdr->community_name, COMMUNITY_LEN );
+  buf += COMMUNITY_LEN;
+
+  memcpy( buf, hdr->src_mac, 6 );
+  buf += 6;
+    
+  memcpy( buf, hdr->dst_mac, 6 );
+  buf += 6;
+    
+  buf += marshall_sockaddr_in( buf, &(hdr->public_ip) );
+  buf += marshall_sockaddr_in( buf, &(hdr->private_ip) );
+
+  *buf = (hdr->pkt_type & 0xff);
+  ++buf;
+
+  buf += marshall_uint32( buf, hdr->sequence_id );
+  buf += marshall_uint32( buf, hdr->crc );
+
+  return (buf - bufStart);
+}
+
+/* ************************************** */
+
+static
+int unmarshall_sockaddr_in( struct sockaddr_in * s,
+                            const u_int8_t * buf )
+{
+  /* REVISIT: only IPv4 supported */
+
+  /* Read family (2-bytes), port (2-bytes), address (4-bytes) all in network order.
+   *
+   * family is stored in native order, port and address are stored in network order.
+   */
+
+  u_int16_t * nu16 = (u_int16_t *)buf;
+  s->sin_family = ntohs( *nu16 );
+  buf += 2;
+
+  memcpy( &(s->sin_port), buf, 2 ); /* already in network order */
+  buf += 2;
+
+  memcpy( &(s->sin_addr.s_addr), buf, 4 ); /* already in network order */
+  buf += 4;
+
+  return 8; /* bytes written */
+}
+
+/* ************************************** */
+
+static
+int unmarshall_uint32( u_int32_t * val, const u_int8_t * buf )
+{
+  u_int32_t * nu32 = (u_int32_t *)buf;
+  *val = ntohl(*nu32);
+
+  return 4;
+}
+
+/* ************************************** */
+
+int unmarshall_n2n_packet_header( struct n2n_packet_header * hdr, const u_int8_t * buf )
+{
+  const u_int8_t * bufStart = buf;
+
+  hdr->version = *buf;
+  ++buf;
+
+  hdr->msg_type = *buf;
+  ++buf;
+
+  hdr->ttl = *buf;
+  ++buf;
+
+  hdr->sent_by_supernode = *buf;
+  ++buf;
+
+  memcpy( hdr->community_name, buf, COMMUNITY_LEN );
+  buf += COMMUNITY_LEN;
+
+  memcpy( hdr->src_mac, buf, 6 );
+  buf += 6;
+    
+  memcpy( hdr->dst_mac, buf, 6 );
+  buf += 6;
+    
+  buf += unmarshall_sockaddr_in( &(hdr->public_ip), buf );
+  buf += unmarshall_sockaddr_in( &(hdr->private_ip), buf );
+
+  hdr->pkt_type = (*buf & 0xff); /* Make sure only 8 bits are copied. */
+  ++buf;
+
+  buf += unmarshall_uint32( &(hdr->sequence_id), buf );
+  buf += unmarshall_uint32( &(hdr->crc), buf );
+
+  print_header( "Unmarshalled ", hdr );
+
+  return (buf - bufStart);
+}
+
+/* ************************************** */
+
+int init_n2n(u_int8_t *encrypt_pwd, u_int32_t encrypt_pwd_len) {
 #ifdef WIN32
   initWin32();
 #endif
 
-  tf = TwoFishInit(encrypt_pwd);
+  tf = TwoFishInit(encrypt_pwd, encrypt_pwd_len);
 
   if(lzo_init() != LZO_E_OK) {
     traceEvent(TRACE_ERROR, "LZO compression error");
@@ -284,7 +461,7 @@ char* macaddr_str(char *mac, char *buf, int buf_len) {
 void fill_standard_header_fields(int sock, u_char is_udp_packet,
 				 struct n2n_packet_header *hdr, char *src_mac) {
   socklen_t len = sizeof(hdr->private_ip);
-  memset(hdr, 0, sizeof(struct n2n_packet_header));
+  memset(hdr, 0, N2N_PKT_HDR_SIZE);
   hdr->version = N2N_VERSION;
   hdr->crc = 0; // FIX
   if(src_mac != NULL) memcpy(hdr->src_mac, src_mac, 6);
@@ -310,14 +487,22 @@ void send_ack(int sock_fd, u_char is_udp_socket,
 	      struct n2n_packet_header *header,
 	      struct sockaddr_in *remote_peer,
 	      char *src_mac) {
+
+  /* marshalling double-checked. */
   struct n2n_packet_header hdr;
+  u_int8_t pkt[ N2N_PKT_HDR_SIZE ];
   size_t len = sizeof(hdr);
+  size_t len2;
 
   fill_standard_header_fields(sock_fd, is_udp_socket, &hdr, src_mac);
   hdr.msg_type = MSG_TYPE_ACK_RESPONSE;
   hdr.sequence_id = last_rcvd_seq_id;
   memcpy(hdr.community_name, header->community_name, COMMUNITY_LEN);
-  send_packet(sock_fd, is_udp_socket, (char*)&hdr, &len, remote_peer, 1);
+
+  len2=marshall_n2n_packet_header( pkt, &hdr );
+  assert( len2 == len );
+
+  send_packet(sock_fd, is_udp_socket, (char*)pkt, &len, remote_peer, 1);
 }
 
 /* *********************************************** */
@@ -337,7 +522,9 @@ u_int receive_data(int sock_fd, u_char is_udp_socket,
 		   char *tun_mac_addr, u_int8_t decompress_data) {
   socklen_t fromlen = sizeof(struct sockaddr_in);
   int len;
-  struct n2n_packet_header *hdr;
+
+  struct n2n_packet_header hdr_storage;
+  struct n2n_packet_header *hdr = &hdr_storage;
   char *payload, *pkt_type, src_mac_buf[32], dst_mac_buf[32], ip_buf[32], from_ip_buf[32];
 
   if(is_udp_socket)
@@ -354,8 +541,9 @@ u_int receive_data(int sock_fd, u_char is_udp_socket,
     }
   }
 
-  hdr = (struct n2n_packet_header*)packet;
-  payload = &packet[sizeof(struct n2n_packet_header)];
+  unmarshall_n2n_packet_header( hdr, (u_int8_t *)packet );
+
+  payload = &packet[N2N_PKT_HDR_SIZE];
 
   if(len < 0) {
 #ifdef WIN32
@@ -363,23 +551,23 @@ u_int receive_data(int sock_fd, u_char is_udp_socket,
       traceEvent(TRACE_WARNING, "recvfrom returned %d [err=%d]", len, WSAGetLastError());
     }
 #endif
-	return(0);
+    return(0);
   } else if(len > MIN_COMPRESSED_PKT_LEN) {
     char decompressed[2048];
     int rc;
     lzo_uint decompressed_len;
 
     if(decompress_data) {
-      rc = lzo1x_decompress((u_char*)&packet[sizeof(struct n2n_packet_header)], 
-			    len-sizeof(struct n2n_packet_header),
+      rc = lzo1x_decompress((u_char*)&packet[N2N_PKT_HDR_SIZE], 
+			    len-N2N_PKT_HDR_SIZE,
 			    (u_char*)decompressed, &decompressed_len, NULL);
       
       if(rc == LZO_E_OK)
 	traceEvent(TRACE_INFO, "%u bytes decompressed into %u", len, decompressed_len);    
       
       if(packet_len > decompressed_len) {
-	memcpy(&packet[sizeof(struct n2n_packet_header)], decompressed, decompressed_len);
-	len = decompressed_len+sizeof(struct n2n_packet_header);
+	memcpy(&packet[N2N_PKT_HDR_SIZE], decompressed, decompressed_len);
+	len = decompressed_len+N2N_PKT_HDR_SIZE;
       } else {
 	traceEvent(TRACE_WARNING, "Uncompressed packet is too large [decompressed_len=%d]",
 		   decompressed_len);
@@ -390,7 +578,7 @@ u_int receive_data(int sock_fd, u_char is_udp_socket,
     (*discarded_pkt) = 0;
 
     if(!hdr->sent_by_supernode)
-      memcpy(&hdr->public_ip, from, sizeof(struct sockaddr_in));
+      memcpy( &(hdr->public_ip), from, sizeof(struct sockaddr_in) );
 
     switch(hdr->pkt_type) {
     case packet_unreliable_data:
@@ -416,8 +604,8 @@ u_int receive_data(int sock_fd, u_char is_udp_socket,
 	       msg_type2str(hdr->msg_type),
 	       hdr->sequence_id);
     traceEvent(TRACE_INFO, "    [src_mac=%s][dst_mac=%s][original_sender=%s:%d]",
-	       macaddr_str((char*)&payload[6], src_mac_buf, sizeof(src_mac_buf)),
-	       macaddr_str((char*)payload, dst_mac_buf, sizeof(dst_mac_buf)),
+	       macaddr_str(hdr->src_mac, src_mac_buf, sizeof(src_mac_buf)),
+	       macaddr_str(hdr->dst_mac, dst_mac_buf, sizeof(dst_mac_buf)),
 	       intoa(ntohl(hdr->public_ip.sin_addr.s_addr), ip_buf, sizeof(ip_buf)),
 	       ntohs(hdr->public_ip.sin_port));
 
@@ -439,8 +627,8 @@ u_int receive_data(int sock_fd, u_char is_udp_socket,
 /* *********************************************** */
 
 static u_int32_t queue_packet(struct send_hash_entry *scan,
-                       char *packet,
-                       u_int16_t packet_len) {
+			      char *packet,
+			      u_int16_t packet_len) {
   struct packet_list *pkt = (struct packet_list*)malloc(sizeof(struct packet_list));
 
   if(pkt == NULL) {
@@ -466,7 +654,7 @@ static u_int32_t queue_packet(struct send_hash_entry *scan,
 
 /* Used for sending packets out */
 static u_int32_t mac2sequence(u_int8_t *mac_addr, char *packet,
-		       u_int16_t packet_len) {
+			      u_int16_t packet_len) {
   u_int32_t hash_idx;
   u_int8_t is_dst_broad_multi_cast = ((!memcmp(broadcast_addr, mac_addr, 6))
 				      || (!memcmp(multicast_addr, mac_addr, 3))) ? 1 : 0;
@@ -509,8 +697,8 @@ static u_int32_t mac2sequence(u_int8_t *mac_addr, char *packet,
  * of `lzo_align_t' (instead of `char') to make sure it is properly aligned.
  */
 
-#define HEAP_ALLOC(var,size) \
-    lzo_align_t __LZO_MMODEL var [ ((size) + (sizeof(lzo_align_t) - 1)) / sizeof(lzo_align_t) ]
+#define HEAP_ALLOC(var,size)						\
+  lzo_align_t __LZO_MMODEL var [ ((size) + (sizeof(lzo_align_t) - 1)) / sizeof(lzo_align_t) ]
 
 static HEAP_ALLOC(wrkmem,LZO1X_1_MEM_COMPRESS);
 
@@ -523,19 +711,19 @@ u_int send_data(int sock_fd, u_char is_udp_socket,
   int rc;
   lzo_uint compressed_len;
 
-  if(*packet_len < sizeof(struct n2n_packet_header)) {
+  if(*packet_len < N2N_PKT_HDR_SIZE) {
     traceEvent(TRACE_WARNING, "The packet about to be sent is too short [len=%d]\n", *packet_len);
     return(-1);
   }
 
-  memcpy(compressed, packet, sizeof(struct n2n_packet_header));
+  memcpy(compressed, packet, N2N_PKT_HDR_SIZE);
 
   if(compress_data) {
-    rc = lzo1x_1_compress((u_char*)&packet[sizeof(struct n2n_packet_header)], 
-			  *packet_len - sizeof(struct n2n_packet_header),
-			  (u_char*)&compressed[sizeof(struct n2n_packet_header)], 
+    rc = lzo1x_1_compress((u_char*)&packet[N2N_PKT_HDR_SIZE], 
+			  *packet_len - N2N_PKT_HDR_SIZE,
+			  (u_char*)&compressed[N2N_PKT_HDR_SIZE], 
 			  &compressed_len, wrkmem);
-    compressed_len += sizeof(struct n2n_packet_header);
+    compressed_len += N2N_PKT_HDR_SIZE;
     
     traceEvent(TRACE_INFO, "%u bytes compressed into %u", *packet_len, compressed_len);
     /* *packet_len = compressed_len; */
@@ -587,29 +775,41 @@ u_int send_data(int sock_fd, u_char is_udp_socket,
 u_int reliable_sendto(int sock_fd, u_char is_udp_socket,
 		      char *packet, size_t *packet_len, 
 		      struct sockaddr_in *to, u_int8_t compress_data) {
-  char *payload = &packet[sizeof(struct n2n_packet_header)];
-  struct n2n_packet_header *hdr = (struct n2n_packet_header*)packet;
+  char *payload = &packet[N2N_PKT_HDR_SIZE];
+  struct n2n_packet_header hdr_storage;
+  struct n2n_packet_header *hdr = &hdr_storage;
   char src_mac_buf[32], dst_mac_buf[32];
 
+  /* REVISIT: efficiency of unmarshal + re-marshal just to change a couple of bits. */
+  unmarshall_n2n_packet_header( hdr, (u_int8_t *)packet );
+
   hdr->sequence_id = (hdr->msg_type == MSG_TYPE_PACKET) ? mac2sequence((u_char*)payload, packet, *packet_len) : 0;
-   hdr->pkt_type    = packet_reliable_data;
+  hdr->pkt_type    = packet_reliable_data;
 
-   traceEvent(TRACE_INFO, "Sent reliable packet [msg_type=%s][seq_id=%d][src_mac=%s][dst_mac=%s]",
-	      msg_type2str(hdr->msg_type), hdr->sequence_id, 
-	      macaddr_str(&packet[6], src_mac_buf, sizeof(src_mac_buf)),
-	      macaddr_str(packet, dst_mac_buf, sizeof(dst_mac_buf)));
+  traceEvent(TRACE_INFO, "Sent reliable packet [msg_type=%s][seq_id=%d][src_mac=%s][dst_mac=%s]",
+             msg_type2str(hdr->msg_type), hdr->sequence_id, 
+             macaddr_str(&packet[6], src_mac_buf, sizeof(src_mac_buf)),
+             macaddr_str(packet, dst_mac_buf, sizeof(dst_mac_buf)));
 
-   return(send_data(sock_fd, is_udp_socket, 
-		    packet, packet_len, to, compress_data));
+  marshall_n2n_packet_header( (u_int8_t *)packet, hdr );
+
+  return(send_data(sock_fd, is_udp_socket, 
+                   packet, packet_len, to, compress_data));
 }
 
 /* *********************************************** */
 
+/* unreliable_sendto is passed a fully marshalled, packet. Its purpose is to set
+ * the unreliable flags but leave the rest of the packet untouched. */
 u_int unreliable_sendto(int sock_fd, u_char is_udp_socket,
 			char *packet, size_t *packet_len, 
 			struct sockaddr_in *to, u_int8_t compress_data) {
-  struct n2n_packet_header *hdr = (struct n2n_packet_header*)packet;
+  struct n2n_packet_header hdr_storage;
+  struct n2n_packet_header *hdr = &hdr_storage;
   char src_mac_buf[32], dst_mac_buf[32];
+
+  /* REVISIT: efficiency of unmarshal + re-marshal just to change a couple of bits. */
+  unmarshall_n2n_packet_header( hdr, (u_int8_t *)packet );
 
   hdr->sequence_id = 0; /* Unreliable messages have 0 as sequence number */
   hdr->pkt_type    = packet_unreliable_data;
@@ -618,6 +818,8 @@ u_int unreliable_sendto(int sock_fd, u_char is_udp_socket,
 	     msg_type2str(hdr->msg_type), hdr->sequence_id, 
 	     macaddr_str(hdr->src_mac, src_mac_buf, sizeof(src_mac_buf)),
 	     macaddr_str(hdr->dst_mac, dst_mac_buf, sizeof(dst_mac_buf)));
+
+  marshall_n2n_packet_header( (u_int8_t *)packet, hdr );
 
   return(send_data(sock_fd, is_udp_socket, 
 		   packet, packet_len, to, compress_data));
@@ -648,4 +850,13 @@ void hexdump(char *buf, u_int len) {
   }
 
   printf("\n");
+}
+
+/* *********************************************** */
+
+void print_n2n_version() {
+  printf("Welcome to n2n v.%s for %s\n"
+         "Built on %s\n"
+         "Copyright 2007-08 by Luca Deri <deri@ntop.org>\n\n",
+         version, osName, buildDate);
 }
