@@ -466,6 +466,7 @@ void fill_standard_header_fields(int sock, u_char is_udp_packet,
   hdr->crc = 0; // FIX
   if(src_mac != NULL) memcpy(hdr->src_mac, src_mac, 6);
   getsockname(sock, (struct sockaddr*)&hdr->private_ip, &len);
+  hdr->public_ip.sin_family = AF_INET;
 }
 
 /* *********************************************** */

@@ -460,6 +460,7 @@ int main(int argc, char* argv[]) {
   tuntap_dev_name = "";
 #endif
   memset(&supernode, 0, sizeof(supernode));
+  supernode.sin_family = AF_INET;
 
   optarg = NULL;
   while((opt = getopt_long(argc, argv, "k:a:c:d:l:p:vhrt", long_options, NULL)) != EOF) {
@@ -594,6 +595,11 @@ int main(int argc, char* argv[]) {
 	    else {
               struct n2n_packet_header hdr_storage;
               struct n2n_packet_header *hdr = &hdr_storage;
+	      char ip_buf[32];
+
+	      traceEvent(TRACE_INFO, "Received packet from %s:%d",
+			 intoa(ntohl(sender.sin_addr.s_addr), ip_buf, sizeof(ip_buf)),
+			 ntohs(sender.sin_port));
 
               unmarshall_n2n_packet_header( hdr, (u_int8_t *)packet );
 
@@ -640,7 +646,6 @@ int main(int argc, char* argv[]) {
 		    }
 		  }
 		} else if(hdr->msg_type == MSG_TYPE_REGISTER) {
-		  char ip_buf[32];
 
 		  traceEvent(TRACE_INFO, "Received registration request from remote peer [ip=%s:%d]",
 			     intoa(ntohl(hdr->public_ip.sin_addr.s_addr), ip_buf, sizeof(ip_buf)),
@@ -648,8 +653,6 @@ int main(int argc, char* argv[]) {
 		  update_peer_address(edge_sock_fd, is_udp_sock, hdr->src_mac, &hdr->public_ip, time(NULL));
 		  send_register(edge_sock_fd, is_udp_sock, &hdr->public_ip, 1); /* Send ACK back */
 		} else if(hdr->msg_type == MSG_TYPE_REGISTER_ACK) {
-		  char ip_buf[32];
-
 		  traceEvent(TRACE_INFO, "Received registration ack from remote peer [ip=%s:%d]",
 			     intoa(ntohl(hdr->public_ip.sin_addr.s_addr), ip_buf, sizeof(ip_buf)),
 			     ntohs(hdr->public_ip.sin_port));
