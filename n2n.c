@@ -578,8 +578,9 @@ u_int receive_data(int sock_fd, u_char is_udp_socket,
 
     (*discarded_pkt) = 0;
 
-    if(!hdr->sent_by_supernode)
-      memcpy( &(hdr->public_ip), from, sizeof(struct sockaddr_in) );
+    if(!hdr->sent_by_supernode) {
+      memcpy( &packet[offsetof(struct n2n_packet_header, public_ip)], from, sizeof(struct sockaddr_in) );
+    }
 
     switch(hdr->pkt_type) {
     case packet_unreliable_data:
