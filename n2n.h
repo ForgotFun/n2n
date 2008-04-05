@@ -122,14 +122,23 @@ enum packet_type {
   packet_pong
 };
 
+/* All information is always in network byte-order */
+struct peer_addr {
+  u_int8_t family;
+  u_int16_t port;
+  union {
+    u_int8_t  v6_addr[16];
+    u_int32_t v4_addr;
+  } addr_type;
+};
 
 struct n2n_packet_header {
   u_int8_t version, msg_type, ttl, sent_by_supernode;
   char community_name[COMMUNITY_LEN], src_mac[6], dst_mac[6];
-  struct sockaddr_in public_ip, private_ip;
+  struct peer_addr public_ip, private_ip;
   enum packet_type pkt_type;
   u_int32_t sequence_id;
-  u_int32_t crc; // FIX - va gestito il CRC/md5 per beccare pacchetti forgiati
+  u_int32_t crc; // FIX - It needs to be handled for detcting forged packets
 };
 
 int marshall_n2n_packet_header( u_int8_t * buf, const struct n2n_packet_header * hdr );
@@ -140,7 +149,7 @@ int unmarshall_n2n_packet_header( struct n2n_packet_header * hdr, const u_int8_t
 
 struct peer_info {
   char community_name[16], mac_addr[6];
-  struct sockaddr_in public_ip, private_ip;
+  struct peer_addr public_ip, private_ip;
   time_t last_seen;
   struct peer_info *next;
   /* socket */
@@ -211,12 +220,14 @@ extern char broadcast_addr[6];
 extern char multicast_addr[6];
 
 /* Functions */
+extern void sockaddr_in2peer_addr(struct sockaddr_in *in, struct peer_addr *out);
+extern void peer_addr2sockaddr_in(struct peer_addr *in, struct sockaddr_in *out);
 extern int  init_n2n(u_int8_t *encrypt_pwd, u_int32_t encrypt_pwd_len );
 extern void term_n2n();
 extern void send_ack(int sock_fd, u_char is_udp_socket,
 		     u_int16_t last_rcvd_seq_id,
 		     struct n2n_packet_header *header,
-		     struct sockaddr_in *remote_peer,
+		     struct peer_addr *remote_peer,
 		     char *src_mac);
 
 extern void traceEvent(int eventTraceLevel, char* file, int line, char * format, ...);
@@ -226,11 +237,11 @@ extern int  tuntap_write(struct tuntap_dev *tuntap, unsigned char *buf, int len)
 extern void tuntap_close(struct tuntap_dev *tuntap);
 
 extern SOCKET open_socket(int local_port, int udp_sock, int server_mode);
-extern int connect_socket(int sock_fd, struct sockaddr_in* dest);
+extern int connect_socket(int sock_fd, struct peer_addr* dest);
 
 extern void send_packet(int sock, u_char is_udp_socket,
 			char *packet, size_t *packet_len,
-			struct sockaddr_in *remote_peer,
+			struct peer_addr *remote_peer,
 			u_int8_t compress_data);
 extern char* intoa(unsigned int addr, char* buf, u_short buf_len);
 extern char* macaddr_str(char *mac, char *buf, int buf_len);
@@ -240,17 +251,17 @@ extern void fill_standard_header_fields(int sock, u_char use_udp_socket,
 
 extern u_int receive_data(int sock_fd, u_char is_udp_socket,
 			  char *packet, size_t packet_len, 
-			  struct sockaddr_in *from, u_int8_t *discarded_pkt,
+			  struct peer_addr *from, u_int8_t *discarded_pkt,
 			  char *tun_mac_addr, u_int8_t decompress_data);
 extern u_int reliable_sendto(int sock_fd, u_char is_udp_socket,
 			     char *packet, size_t *packet_len, 
-			     struct sockaddr_in *from, u_int8_t compress_data);
+			     struct peer_addr *from, u_int8_t compress_data);
 extern u_int unreliable_sendto(int sock_fd, u_char is_udp_socket,
 			       char *packet, size_t *packet_len, 
-			       struct sockaddr_in *from, u_int8_t compress_data);
+			       struct peer_addr *from, u_int8_t compress_data);
 extern u_int send_data(int sock_fd,  u_char is_udp_socket,
 		       char *packet, size_t *packet_len, 
-		       struct sockaddr_in *to, u_int8_t compress_data);
+		       struct peer_addr *to, u_int8_t compress_data);
 extern u_int8_t is_multi_broadcast(char *dest_mac);
 extern char* msg_type2str(u_short msg_type);
 extern void hexdump(char *buf, u_int len);

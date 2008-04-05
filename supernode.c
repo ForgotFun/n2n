@@ -37,7 +37,7 @@ static struct peer_info *known_peers = NULL;
 /* *********************************************** */
 
 static void register_peer(struct n2n_packet_header *hdr,
-			  struct sockaddr_in *sender,
+			  struct peer_addr *sender,
 			  int sock_fd, u_char is_udp_socket) {
   struct peer_info *scan = known_peers;
   char buf[32], buf1[32], mac_buf[32];
@@ -45,16 +45,16 @@ static void register_peer(struct n2n_packet_header *hdr,
   while(scan != NULL) {
     if((strcmp(scan->community_name, hdr->community_name) == 0)
        && (memcmp(&scan->mac_addr, hdr->src_mac, 6) == 0)) {
-      memcpy(&scan->public_ip, sender, sizeof(struct sockaddr_in));
-      memcpy(&scan->private_ip, &hdr->private_ip, sizeof(struct sockaddr_in));
+      memcpy(&scan->public_ip, sender, sizeof(struct peer_addr));
+      memcpy(&scan->private_ip, &hdr->private_ip, sizeof(struct peer_addr));
       scan->last_seen = time(NULL);
-      
+
       /* Overwrite existing peer */
       traceEvent(TRACE_INFO, "Re-registered new node [public_ip=%s:%d][private_ip=%s:%d][mac=%s][community=%s]",
-		 intoa(ntohl(scan->public_ip.sin_addr.s_addr), buf, sizeof(buf)), 
-		 ntohs(scan->public_ip.sin_port),
-		 intoa(ntohl(scan->private_ip.sin_addr.s_addr), buf1, sizeof(buf1)), 
-		 ntohs(scan->private_ip.sin_port),
+		 intoa(ntohl(scan->public_ip.addr_type.v4_addr), buf, sizeof(buf)),
+		 ntohs(scan->public_ip.port),
+		 intoa(ntohl(scan->private_ip.addr_type.v4_addr), buf1, sizeof(buf1)),
+		 ntohs(scan->private_ip.port),
 		 macaddr_str(scan->mac_addr, mac_buf, sizeof(mac_buf)),
 		 scan->community_name);
 
@@ -68,8 +68,8 @@ static void register_peer(struct n2n_packet_header *hdr,
 
   scan = (struct peer_info*)calloc(1, sizeof(struct peer_info));
   memcpy(scan->community_name, hdr->community_name, COMMUNITY_LEN);
-  memcpy(&scan->public_ip, sender, sizeof(struct sockaddr_in));
-  memcpy(&scan->private_ip, &hdr->private_ip, sizeof(struct sockaddr_in));
+  memcpy(&scan->public_ip, sender, sizeof(struct peer_addr));
+  memcpy(&scan->private_ip, &hdr->private_ip, sizeof(struct peer_addr));
   memcpy(&scan->mac_addr, hdr->src_mac, 6);
   scan->last_seen = time(NULL); // FIX aggiungere un timeout
   scan->next = known_peers;
@@ -77,10 +77,10 @@ static void register_peer(struct n2n_packet_header *hdr,
   known_peers = scan;
 
   traceEvent(TRACE_INFO, "Registered new node [public_ip=%s:%d][private_ip=%s:%d][mac=%s][community=%s]",
-	     intoa(ntohl(scan->public_ip.sin_addr.s_addr), buf, sizeof(buf)),
-	     ntohs(scan->public_ip.sin_port),
-	     intoa(ntohl(scan->private_ip.sin_addr.s_addr), buf1, sizeof(buf1)), 
-	     ntohs(scan->private_ip.sin_port),
+	     intoa(ntohl(scan->public_ip.addr_type.v4_addr), buf, sizeof(buf)),
+	     ntohs(scan->public_ip.port),
+	     intoa(ntohl(scan->private_ip.addr_type.v4_addr), buf1, sizeof(buf1)),
+	     ntohs(scan->private_ip.port),
 	     macaddr_str(scan->mac_addr, mac_buf, sizeof(mac_buf)),
 	     scan->community_name);
 }
@@ -88,7 +88,7 @@ static void register_peer(struct n2n_packet_header *hdr,
 /* *********************************************** */
 
 static void deregister_peer(struct n2n_packet_header *hdr,
-			    struct sockaddr_in *sender) {
+			    struct peer_addr *sender) {
   struct peer_info *scan = known_peers, *prev = NULL;
   char buf[32], buf1[32];
 
@@ -102,11 +102,11 @@ static void deregister_peer(struct n2n_packet_header *hdr,
 	prev->next = scan->next;
 
       traceEvent(TRACE_INFO, "Degistered node [public_ip=%s:%d][private_ip=%s:%d]",
-		 intoa(ntohl(scan->public_ip.sin_addr.s_addr), buf, sizeof(buf)),
-		 ntohs(scan->public_ip.sin_port),
-		 intoa(ntohl(scan->private_ip.sin_addr.s_addr), buf1, sizeof(buf1)), 
-		 ntohs(scan->private_ip.sin_port));
-      
+		 intoa(ntohl(scan->public_ip.addr_type.v4_addr), buf, sizeof(buf)),
+		 ntohs(scan->public_ip.port),
+		 intoa(ntohl(scan->private_ip.addr_type.v4_addr), buf1, sizeof(buf1)),
+		 ntohs(scan->private_ip.port));
+
       free(scan);
       return;
     }
@@ -115,8 +115,8 @@ static void deregister_peer(struct n2n_packet_header *hdr,
   }
 
   traceEvent(TRACE_WARNING, "Unable to delete specified peer [%s:%d]",
-	     intoa(ntohl(sender->sin_addr.s_addr), buf, sizeof(buf)),
-	     ntohs(sender->sin_port));
+	     intoa(ntohl(sender->addr_type.v4_addr), buf, sizeof(buf)),
+	     ntohs(sender->port));
 }
 
 /* *********************************************** */
@@ -128,7 +128,7 @@ static void purge_expired_registrations() {
   u_int num_reg = 0;
 
   if((now - last_purge) < PURGE_REGISTRATION_FREQUENCY) return;
-  
+
   traceEvent(TRACE_INFO, "Purging old registrations");
 
   scan = known_peers, prev = NULL;
@@ -140,12 +140,12 @@ static void purge_expired_registrations() {
 
       if(prev == NULL)
 	known_peers = next;
-      else 
+      else
 	prev->next = next;
 
       traceEvent(TRACE_INFO, "Purged registration for host [%s:%d][mac=%s][last seen %d sec ago]",
-		 intoa(ntohl(scan->public_ip.sin_addr.s_addr), buf, sizeof(buf)),
-		 ntohs(scan->public_ip.sin_port),
+		 intoa(ntohl(scan->public_ip.addr_type.v4_addr), buf, sizeof(buf)),
+		 ntohs(scan->public_ip.port),
 		 macaddr_str(scan->mac_addr, mac_buf, sizeof(mac_buf)),
 		 (now - scan->last_seen));
 
@@ -155,8 +155,8 @@ static void purge_expired_registrations() {
       num_reg++;
 
       traceEvent(TRACE_INFO, "== [%d] Registration [ip=%s:%d][mac=%s][community=%s][last seen %d sec ago]",
-		 num_reg, intoa(ntohl(scan->public_ip.sin_addr.s_addr), buf, sizeof(buf)),
-                 ntohs(scan->public_ip.sin_port),
+		 num_reg, intoa(ntohl(scan->public_ip.addr_type.v4_addr), buf, sizeof(buf)),
+                 ntohs(scan->public_ip.port),
 		 macaddr_str(scan->mac_addr, mac_buf, sizeof(mac_buf)),
 		 scan->community_name, (now - scan->last_seen));
 
@@ -181,13 +181,14 @@ static const struct option long_options[] = {
 
 /* *********************************************** */
 
-static void handle_packet(char *packet, u_int packet_len, struct sockaddr_in *sender,
+static void handle_packet(char *packet, u_int packet_len, 
+			  struct peer_addr *sender,
 			  int sock_fd, u_char is_udp_socket) {
   char buf[32];
 
   traceEvent(TRACE_INFO, "Received message from node [%s:%d]",
-	     intoa(ntohl(sender->sin_addr.s_addr), buf, sizeof(buf)),
-	     ntohs(sender->sin_port));
+	     intoa(ntohl(sender->addr_type.v4_addr), buf, sizeof(buf)),
+	     ntohs(sender->port));
 
   if(packet_len < N2N_PKT_HDR_SIZE)
     traceEvent(TRACE_WARNING, "Received packet too short [len=%d]\n", packet_len);
@@ -210,22 +211,22 @@ static void handle_packet(char *packet, u_int packet_len, struct sockaddr_in *se
       deregister_peer(hdr, sender);
     } else if(hdr->msg_type == MSG_TYPE_PACKET) {
       /* This is a packet to route */
-      u_int8_t is_dst_broad_multi_cast;		
+      u_int8_t is_dst_broad_multi_cast;
       struct peer_info *scan;
       u_char packet_sent = 0;
 
       hdr->ttl++; /* FIX discard packets with a high TTL */
       is_dst_broad_multi_cast = is_multi_broadcast(hdr->dst_mac);
-	      
+
       /* Put the original packet sender (public) address */
-      memcpy(&hdr->public_ip, sender, sizeof(struct sockaddr_in));
+      memcpy(&hdr->public_ip, sender, sizeof(struct peer_addr));
       hdr->sent_by_supernode = 1;
 
       scan = known_peers;
       while(scan != NULL) {
 	if((strcmp(scan->community_name, hdr->community_name) == 0)
 	   && (is_dst_broad_multi_cast || (memcmp(scan->mac_addr, hdr->dst_mac, 6) == 0))
-	   && (memcmp(sender, &scan->public_ip, sizeof(struct sockaddr_in)) /* No L3 self-send */)
+	   && (memcmp(sender, &scan->public_ip, sizeof(struct peer_addr)) /* No L3 self-send */)
 	   && (memcmp(hdr->dst_mac, hdr->src_mac, 6) /* No L2 self-send */)) {
 	  size_t len = packet_len;
 	  int data_sent_len = send_data(scan->sock_fd, scan->is_udp_socket, packet, &len, &scan->public_ip, 0);
@@ -239,8 +240,8 @@ static void handle_packet(char *packet, u_int packet_len, struct sockaddr_in *se
 	    packet_sent = 1, pkt_sent++;
 	    traceEvent(TRACE_INFO, "Sent %smessage to remote node [%s:%d][mac=%s]",
 		       is_dst_broad_multi_cast ? "broadcast " : "",
-		       intoa(ntohl(scan->public_ip.sin_addr.s_addr), buf, sizeof(buf)), 
-		       ntohs(scan->public_ip.sin_port),
+		       intoa(ntohl(scan->public_ip.addr_type.v4_addr), buf, sizeof(buf)),
+		       ntohs(scan->public_ip.port),
 		       macaddr_str(scan->mac_addr, buf1, sizeof(buf1)));
 	  }
 
@@ -255,15 +256,15 @@ static void handle_packet(char *packet, u_int packet_len, struct sockaddr_in *se
 		   macaddr_str(hdr->dst_mac, buf, sizeof(buf)));
       }
     } else {
-      traceEvent(TRACE_WARNING, "Unable to handle packet type %d: ignored\n", 
+      traceEvent(TRACE_WARNING, "Unable to handle packet type %d: ignored\n",
 		 hdr->msg_type);
     }
   }
-}  
+}
 
 /* *********************************************** */
 
-static 
+static
 #ifdef WIN32
 DWORD tcpReadThread(LPVOID lpArg)
 #else
@@ -275,15 +276,15 @@ DWORD tcpReadThread(LPVOID lpArg)
   int new_line = 0;
 
   traceEvent(TRACE_NORMAL, "Handling sock_fd %d", sock_fd);
-  
+
   while(1) {
     int rc;
-    
+
     if((rc = recv(sock_fd, c, 2, 0)) > 0) {
       if((c[0] == '\r') && (c[1] == '\n')) {
 	if(!new_line)
 	  new_line = 1;
-	else 
+	else
 	  break; /* Double \r\n\r\n, the http header is over */
       } else
 	printf("%c%c [%d][%d] ", c[0], c[1], c[0], c[1]); fflush(stdout);
@@ -298,7 +299,7 @@ DWORD tcpReadThread(LPVOID lpArg)
 
   while(1) {
     int rc;
-    
+
     // FIX: add select
     if((rc = recv(sock_fd, c, 4, 0)) == 4) {
       int len = atoi(c);
@@ -306,12 +307,17 @@ DWORD tcpReadThread(LPVOID lpArg)
       struct sockaddr_in from;
 
       /* Check packet length */
-      if((len <= 0) || (len >= 1600)) break; 
+      if((len <= 0) || (len >= 1600)) break;
       rc = recvfrom(sock_fd, c, len, 0, (struct sockaddr*)&from, &from_len);
+
       if((rc <= 0) || (rc != len))
 	break;
-      else
-	handle_packet(c, len, &from, sock_fd, 0 /* tcp */);
+      else {
+	struct peer_addr _from;
+
+	sockaddr_in2peer_addr(&from, &_from);
+	handle_packet(c, len, &_from, sock_fd, 0 /* tcp */);
+      }
     } else
       break;
   }
@@ -393,18 +399,19 @@ int main(int argc, char* argv[]) {
       if(FD_ISSET(udp_sock_fd, &socket_mask)) {
 	char packet[2048];
 	size_t len;
-	struct sockaddr_in sender;
+	struct peer_addr sender;
 	u_int8_t discarded_pkt;
+
 	len = receive_data(udp_sock_fd, 1, packet, sizeof(packet), &sender, &discarded_pkt, NULL, 0);
 
 	if(len <= 0)
 	  traceEvent(TRACE_WARNING, "recvfrom()=%d [%s]\n", len, strerror(errno));
 	else {
 	  handle_packet(packet, len, &sender, udp_sock_fd, 1);
-	}      
+	}
       } else if(FD_ISSET(tcp_sock_fd, &socket_mask)) {
 	struct sockaddr from;
-	int from_len = sizeof(from);	
+	int from_len = sizeof(from);
 	int new_sock = accept(tcp_sock_fd, (struct sockaddr*)&from,
 			      (socklen_t*)&from_len);
 
@@ -416,7 +423,7 @@ int main(int argc, char* argv[]) {
       }
     }
 
-    purge_expired_registrations();            
+    purge_expired_registrations();
   } /* while */
 
   close(udp_sock_fd);

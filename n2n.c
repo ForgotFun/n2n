@@ -39,38 +39,40 @@ static void print_header( const char * msg, const struct n2n_packet_header * hdr
   char buf[32], buf2[32];
 
   traceEvent(TRACE_INFO, "%s hdr: public_ip=(%d)%s:%d, private_ip=(%d)%s:%d", msg, 
-	     hdr->public_ip.sin_family,
-	     intoa(ntohl(hdr->public_ip.sin_addr.s_addr), buf, sizeof(buf)),  
-	     ntohs(hdr->public_ip.sin_port),
-	     hdr->private_ip.sin_family, 
-	     intoa(ntohl(hdr->private_ip.sin_addr.s_addr), buf2, sizeof(buf2)), 
-	     ntohs(hdr->private_ip.sin_port)
+	     hdr->public_ip.family,
+	     intoa(ntohl(hdr->public_ip.addr_type.v4_addr), buf, sizeof(buf)),  
+	     ntohs(hdr->public_ip.port),
+	     hdr->private_ip.family, 
+	     intoa(ntohl(hdr->private_ip.addr_type.v4_addr), buf2, sizeof(buf2)), 
+	     ntohs(hdr->private_ip.port)
 	     );
+}
+
+/* *********************************************** */
+
+extern void sockaddr_in2peer_addr(struct sockaddr_in *in, struct peer_addr *out) {
+  out->family            = in->sin_family;
+  out->port              = in->sin_port;
+  out->addr_type.v4_addr = in->sin_addr.s_addr;
+}
+
+/* *********************************************** */
+
+extern void peer_addr2sockaddr_in(struct peer_addr *in, struct sockaddr_in *out) {
+  out->sin_family      = in->family;
+  out->sin_port        = in->port;
+  out->sin_addr.s_addr = in->addr_type.v4_addr;
 }
 
 /* ************************************** */
 
 static
-int marshall_sockaddr_in( u_int8_t * buf, const struct sockaddr_in * s )
+int marshall_peer_addr( u_int8_t * buf, const struct peer_addr * s )
 {
-  /* REVISIT: only IPv4 supported */
+  memcpy( buf, s, sizeof(struct peer_addr));
+  buf += sizeof(struct peer_addr);
 
-  /* Write family (2-bytes), port (2-bytes), address (4-bytes) all in network order.
-   *
-   * family is stored in native order, port and address are already in network order.
-   */
-
-  u_int16_t * nu16 = (u_int16_t *)buf;
-  *nu16 = htons( s->sin_family );
-  buf += 2;
-
-  memcpy( buf, &(s->sin_port), 2 ); /* already in network order */
-  buf += 2;
-
-  memcpy( buf, &(s->sin_addr.s_addr), 4 ); /* already in network order */
-  buf += 4;
-
-  return 8; /* bytes written */
+  return sizeof(struct peer_addr); /* bytes written */
 }
 
 /* ************************************** */
@@ -113,8 +115,8 @@ int marshall_n2n_packet_header( u_int8_t * buf, const struct n2n_packet_header *
   memcpy( buf, hdr->dst_mac, 6 );
   buf += 6;
     
-  buf += marshall_sockaddr_in( buf, &(hdr->public_ip) );
-  buf += marshall_sockaddr_in( buf, &(hdr->private_ip) );
+  buf += marshall_peer_addr( buf, &(hdr->public_ip) );
+  buf += marshall_peer_addr( buf, &(hdr->private_ip) );
 
   *buf = (hdr->pkt_type & 0xff);
   ++buf;
@@ -128,27 +130,12 @@ int marshall_n2n_packet_header( u_int8_t * buf, const struct n2n_packet_header *
 /* ************************************** */
 
 static
-int unmarshall_sockaddr_in( struct sockaddr_in * s,
-                            const u_int8_t * buf )
+int unmarshall_peer_addr( struct peer_addr * s,
+			  const u_int8_t * buf )
 {
-  /* REVISIT: only IPv4 supported */
-
-  /* Read family (2-bytes), port (2-bytes), address (4-bytes) all in network order.
-   *
-   * family is stored in native order, port and address are stored in network order.
-   */
-
-  u_int16_t * nu16 = (u_int16_t *)buf;
-  s->sin_family = ntohs( *nu16 );
-  buf += 2;
-
-  memcpy( &(s->sin_port), buf, 2 ); /* already in network order */
-  buf += 2;
-
-  memcpy( &(s->sin_addr.s_addr), buf, 4 ); /* already in network order */
-  buf += 4;
-
-  return 8; /* bytes written */
+  memcpy(s, buf, sizeof(struct peer_addr));
+  buf += sizeof(struct peer_addr);
+  return (sizeof(struct peer_addr)); /* bytes written */
 }
 
 /* ************************************** */
@@ -189,8 +176,8 @@ int unmarshall_n2n_packet_header( struct n2n_packet_header * hdr, const u_int8_t
   memcpy( hdr->dst_mac, buf, 6 );
   buf += 6;
     
-  buf += unmarshall_sockaddr_in( &(hdr->public_ip), buf );
-  buf += unmarshall_sockaddr_in( &(hdr->private_ip), buf );
+  buf += unmarshall_peer_addr( &(hdr->public_ip), buf );
+  buf += unmarshall_peer_addr( &(hdr->private_ip), buf );
 
   hdr->pkt_type = (*buf & 0xff); /* Make sure only 8 bits are copied. */
   ++buf;
@@ -327,11 +314,15 @@ SOCKET open_socket(int local_port, int udp_sock, int server_mode) {
 
 /* ************************************** */
 
-int connect_socket(int sock_fd, struct sockaddr_in* dest) {
+int connect_socket(int sock_fd, struct peer_addr* _dest) {
   char *http_header;
   int len, rc;
+  struct sockaddr_in dest;
 
-  rc = connect(sock_fd, (struct sockaddr*)dest, sizeof(struct sockaddr_in));
+  peer_addr2sockaddr_in(_dest, &dest);
+
+    /* FIX: add IPv6 support */
+  rc = connect(sock_fd, (struct sockaddr*)&dest, sizeof(struct sockaddr_in));
 
   if(rc == -1) {
     traceEvent(TRACE_WARNING, "connect() error [%s]\n", strerror(errno));
@@ -351,7 +342,7 @@ int connect_socket(int sock_fd, struct sockaddr_in* dest) {
 
 void send_packet(int sock, u_char is_udp_socket, 
 		 char *packet, size_t *packet_len,
-		 struct sockaddr_in *remote_peer, u_int8_t compress_data) {
+		 struct peer_addr *remote_peer, u_int8_t compress_data) {
   int data_sent_len;
 
   data_sent_len = unreliable_sendto(sock, is_udp_socket,
@@ -466,7 +457,7 @@ void fill_standard_header_fields(int sock, u_char is_udp_packet,
   hdr->crc = 0; // FIX
   if(src_mac != NULL) memcpy(hdr->src_mac, src_mac, 6);
   getsockname(sock, (struct sockaddr*)&hdr->private_ip, &len);
-  hdr->public_ip.sin_family = AF_INET;
+  hdr->public_ip.family = AF_INET;
 }
 
 /* *********************************************** */
@@ -486,7 +477,7 @@ static u_int32_t hash_value(const u_int8_t *str, const u_int8_t str_len) {
 void send_ack(int sock_fd, u_char is_udp_socket, 
 	      u_int16_t last_rcvd_seq_id,
 	      struct n2n_packet_header *header,
-	      struct sockaddr_in *remote_peer,
+	      struct peer_addr *remote_peer,
 	      char *src_mac) {
 
   /* marshalling double-checked. */
@@ -519,7 +510,7 @@ u_int8_t is_multi_broadcast(char *dest_mac) {
 
 u_int receive_data(int sock_fd, u_char is_udp_socket,
 		   char *packet, size_t packet_len,
-		   struct sockaddr_in *from, u_int8_t *discarded_pkt,
+		   struct peer_addr *from, u_int8_t *discarded_pkt,
 		   char *tun_mac_addr, u_int8_t decompress_data) {
   socklen_t fromlen = sizeof(struct sockaddr_in);
   int len;
@@ -528,9 +519,11 @@ u_int receive_data(int sock_fd, u_char is_udp_socket,
   struct n2n_packet_header *hdr = &hdr_storage;
   char *payload, *pkt_type, src_mac_buf[32], dst_mac_buf[32], ip_buf[32], from_ip_buf[32];
 
-  if(is_udp_socket)
-    len = recvfrom(sock_fd, packet, packet_len, 0, (struct sockaddr*)from, &fromlen);
-  else {
+  if(is_udp_socket) {
+    struct sockaddr_in _from;
+    len = recvfrom(sock_fd, packet, packet_len, 0, (struct sockaddr*)&_from, &fromlen);
+    sockaddr_in2peer_addr(&_from, from);
+  } else {
     len = recv(sock_fd, packet, 4, 0);
     if(len == 4) {
       packet[4] = '\0';
@@ -601,15 +594,14 @@ u_int receive_data(int sock_fd, u_char is_udp_socket,
 
     traceEvent(TRACE_INFO, "+++ Received %s packet [rcvd_from=%s:%d][msg_type=%s][seq_id=%d]",
 	       pkt_type, 
-	       intoa(ntohl(from->sin_addr.s_addr), from_ip_buf, sizeof(from_ip_buf)),
-	       ntohs(from->sin_port),	       
-	       msg_type2str(hdr->msg_type),
+	       intoa(ntohl(from->addr_type.v4_addr), from_ip_buf, sizeof(from_ip_buf)),
+	       ntohs(from->port), msg_type2str(hdr->msg_type),
 	       hdr->sequence_id);
     traceEvent(TRACE_INFO, "    [src_mac=%s][dst_mac=%s][original_sender=%s:%d]",
 	       macaddr_str(hdr->src_mac, src_mac_buf, sizeof(src_mac_buf)),
 	       macaddr_str(hdr->dst_mac, dst_mac_buf, sizeof(dst_mac_buf)),
-	       intoa(ntohl(hdr->public_ip.sin_addr.s_addr), ip_buf, sizeof(ip_buf)),
-	       ntohs(hdr->public_ip.sin_port));
+	       intoa(ntohl(hdr->public_ip.addr_type.v4_addr), ip_buf, sizeof(ip_buf)),
+	       ntohs(hdr->public_ip.port));
 
 #ifdef HANDLE_RETRANSMISSION
     if((hdr->pkt_type == packet_reliable_data)
@@ -708,7 +700,7 @@ static HEAP_ALLOC(wrkmem,LZO1X_1_MEM_COMPRESS);
 
 u_int send_data(int sock_fd, u_char is_udp_socket, 
 		char *packet, size_t *packet_len, 
-		struct sockaddr_in *to, u_int8_t compress_data) {
+		struct peer_addr *to, u_int8_t compress_data) {
   char compressed[1600];
   int rc;
   lzo_uint compressed_len;
@@ -730,17 +722,23 @@ u_int send_data(int sock_fd, u_char is_udp_socket,
     traceEvent(TRACE_INFO, "%u bytes compressed into %u", *packet_len, compressed_len);
     /* *packet_len = compressed_len; */
     
-    if(is_udp_socket)
+    if(is_udp_socket) {
+      struct sockaddr_in _to;
+      
+      peer_addr2sockaddr_in(to, &_to);
       rc = sendto(sock_fd, compressed, compressed_len, 0, 
-		  (struct sockaddr*)to, sizeof(struct sockaddr_in));
-    else {
+		  (struct sockaddr*)&_to, sizeof(struct sockaddr_in));
+    } else {
       char send_len[5];
 
       /* 4 bytes packet length */
       snprintf(send_len, sizeof(send_len), "%04d", (int)compressed_len);
       if((rc = send(sock_fd, send_len, 4, 0)) != 4)
 	return(-1);
-      rc = send(sock_fd, compressed, compressed_len, 0);
+      if((rc = send(sock_fd, compressed, compressed_len, 0)) != compressed_len) {
+	traceEvent(TRACE_WARNING, "send error [%d][%s]",
+		   errno, strerror(errno));
+      }
     }
   } else {
     compressed_len = *packet_len;
@@ -761,8 +759,8 @@ u_int send_data(int sock_fd, u_char is_udp_socket,
       char ip_buf[32];
 
       traceEvent(TRACE_WARNING, "sendto() failed while attempting to send data to %s:%d",
-		 intoa(ntohl(to->sin_addr.s_addr), ip_buf, sizeof(ip_buf)), 
-		 ntohs(to->sin_port));
+		 intoa(ntohl(to->addr_type.v4_addr), ip_buf, sizeof(ip_buf)), 
+		 ntohs(to->port));
     }
   }
 
@@ -776,7 +774,7 @@ u_int send_data(int sock_fd, u_char is_udp_socket,
 
 u_int reliable_sendto(int sock_fd, u_char is_udp_socket,
 		      char *packet, size_t *packet_len, 
-		      struct sockaddr_in *to, u_int8_t compress_data) {
+		      struct peer_addr *to, u_int8_t compress_data) {
   char *payload = &packet[N2N_PKT_HDR_SIZE];
   struct n2n_packet_header hdr_storage;
   struct n2n_packet_header *hdr = &hdr_storage;
@@ -805,7 +803,7 @@ u_int reliable_sendto(int sock_fd, u_char is_udp_socket,
  * the unreliable flags but leave the rest of the packet untouched. */
 u_int unreliable_sendto(int sock_fd, u_char is_udp_socket,
 			char *packet, size_t *packet_len, 
-			struct sockaddr_in *to, u_int8_t compress_data) {
+			struct peer_addr *to, u_int8_t compress_data) {
   struct n2n_packet_header hdr_storage;
   struct n2n_packet_header *hdr = &hdr_storage;
   char src_mac_buf[32], dst_mac_buf[32];
