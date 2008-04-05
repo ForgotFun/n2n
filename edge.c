@@ -60,7 +60,11 @@ static void help() {
 	 "\n"
 	 "-l <supernode host:port> "
 	 "[-p <local port>] "
-	 "[-t] [-r] [-v] [-h]\n");
+	 "[-t] [-r] [-v] [-h]\n\n");
+
+#ifdef __linux__
+  printf("-d <tun device>          | tun device name\n");
+#endif
 
   printf("-a <tun IP address>      | n2n IP address\n");
   printf("-c <community>           | n2n community name\n");
