@@ -87,7 +87,7 @@ int tuntap_open(tuntap_dev *device,
   snprintf(buf, sizeof(buf), "/sbin/ifconfig %s %s netmask %s mtu 1400 up",
 	   ifr.ifr_name, device_ip, device_mask);
   system(buf);
-  printf("-> %s\n", buf);
+  traceEvent(TRACE_INFO, "Executed %s", buf);
 
   device->ip_addr = inet_addr(device_ip);
   read_mac(dev, (char*)device->mac_addr);

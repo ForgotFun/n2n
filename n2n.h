@@ -252,7 +252,8 @@ extern void fill_standard_header_fields(int sock, u_char use_udp_socket,
 extern u_int receive_data(int sock_fd, u_char is_udp_socket,
 			  char *packet, size_t packet_len, 
 			  struct peer_addr *from, u_int8_t *discarded_pkt,
-			  char *tun_mac_addr, u_int8_t decompress_data);
+			  char *tun_mac_addr, u_int8_t decompress_data,
+			  struct n2n_packet_header *hdr);
 extern u_int reliable_sendto(int sock_fd, u_char is_udp_socket,
 			     char *packet, size_t *packet_len, 
 			     struct peer_addr *from, u_int8_t compress_data);

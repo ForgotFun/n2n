@@ -511,12 +511,10 @@ u_int8_t is_multi_broadcast(char *dest_mac) {
 u_int receive_data(int sock_fd, u_char is_udp_socket,
 		   char *packet, size_t packet_len,
 		   struct peer_addr *from, u_int8_t *discarded_pkt,
-		   char *tun_mac_addr, u_int8_t decompress_data) {
+		   char *tun_mac_addr, u_int8_t decompress_data,
+		   struct n2n_packet_header *hdr) {
   socklen_t fromlen = sizeof(struct sockaddr_in);
   int len;
-
-  struct n2n_packet_header hdr_storage;
-  struct n2n_packet_header *hdr = &hdr_storage;
   char *payload, *pkt_type, src_mac_buf[32], dst_mac_buf[32], ip_buf[32], from_ip_buf[32];
 
   if(is_udp_socket) {
@@ -535,7 +533,7 @@ u_int receive_data(int sock_fd, u_char is_udp_socket,
     }
   }
 
-  unmarshall_n2n_packet_header( hdr, (u_int8_t *)packet );
+  unmarshall_n2n_packet_header(hdr, (u_int8_t *)packet);
 
   payload = &packet[N2N_PKT_HDR_SIZE];
 

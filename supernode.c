@@ -401,8 +401,9 @@ int main(int argc, char* argv[]) {
 	size_t len;
 	struct peer_addr sender;
 	u_int8_t discarded_pkt;
+	struct n2n_packet_header hdr;
 
-	len = receive_data(udp_sock_fd, 1, packet, sizeof(packet), &sender, &discarded_pkt, NULL, 0);
+	len = receive_data(udp_sock_fd, 1, packet, sizeof(packet), &sender, &discarded_pkt, NULL, 0, &hdr);
 
 	if(len <= 0)
 	  traceEvent(TRACE_WARNING, "recvfrom()=%d [%s]\n", len, strerror(errno));
