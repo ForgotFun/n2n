@@ -86,3 +86,8 @@ aware of one another by gratuitous ARP. A gratuitous ARP packet is a broadcast
 packet sent by a node for no other purpose than to announce its presence and
 identify its MAC and IP address. Gratuitous ARP packets are to keep ARP caches
 up to date so contacting the host will be faster after an long idle time.
+
+
+-------
+
+April 2008 - Richard Andrews <bbmaj7@yahoo.com.au>
