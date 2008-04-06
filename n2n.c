@@ -409,7 +409,8 @@ void traceEvent(int eventTraceLevel, char* file, int line, char * format, ...) {
 
 /* *********************************************** */
 
-char* intoa(unsigned int addr, char* buf, u_short buf_len) {
+/* addr should be in network order. Things are so much simpler that way. */
+char* intoa(u_int32_t /* host order */ addr, char* buf, u_short buf_len) {
   char *cp, *retStr;
   u_int byte;
   int n;

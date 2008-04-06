@@ -107,11 +107,6 @@ static void send_register(int sock, u_char is_udp_socket,
   size_t len = sizeof(hdr);
   char ip_buf[32];
 
-  traceEvent(TRACE_INFO, "Sending registration message to [family=%d] %s:%d",
-             remote_peer->family,
-	     intoa(ntohl(remote_peer->addr_type.v4_addr), ip_buf, sizeof(ip_buf)),
-	     ntohs(remote_peer->port));
-
   fill_standard_header_fields(sock, is_udp_socket, &hdr, (char*)device.mac_addr);
   hdr.sent_by_supernode = 0;
   hdr.msg_type = (is_ack == 0) ? MSG_TYPE_REGISTER : MSG_TYPE_REGISTER_ACK;
@@ -120,8 +115,8 @@ static void send_register(int sock, u_char is_udp_socket,
   marshall_n2n_packet_header( (u_int8_t *)pkt, &hdr );
   send_packet(sock, is_udp_socket, pkt, &len, remote_peer, 1);
 
-  traceEvent(TRACE_INFO, "Sent registration message to family=%d %s:%d",
-             remote_peer->family,
+  traceEvent(TRACE_INFO, "Sent %s message to %s:%d",
+             ((hdr.msg_type==MSG_TYPE_REGISTER)?"MSG_TYPE_REGISTER":"MSG_TYPE_REGISTER_ACK"),
 	     intoa(ntohl(remote_peer->addr_type.v4_addr), ip_buf, sizeof(ip_buf)),
 	     ntohs(remote_peer->port));
 }
@@ -145,11 +140,44 @@ static void send_deregister(int sock, u_char is_udp_socket,
 
 /* *********************************************** */
 
+void trace_registrations( struct peer_info * scan );
+
+void trace_registrations( struct peer_info * scan )
+{
+    char mac_buf[32];
+    char ip_buf[32];
+
+    while ( scan )
+    {
+        traceEvent(TRACE_INFO, "=== peer [mac=%s][socket=%s:%d]",
+                   macaddr_str(scan->mac_addr, mac_buf, sizeof(mac_buf)),
+                   intoa(ntohl(scan->public_ip.addr_type.v4_addr), ip_buf, sizeof(ip_buf)),
+                   ntohs(scan->public_ip.port));
+
+        scan = scan->next;
+    }
+
+}
+
+u_int8_t broadcast_mac[6] = { 0xff, 0xff, 0xff, 0xff, 0xff, 0xff };
+
 static void update_peer_address(int sock_fd, u_char is_udp_socket, char *mac_address,
 				struct peer_addr *public_ip, time_t when) {
   struct peer_info *scan = known_peers;
   u_char found = 0;
   char mac_buf[32], ip_buf[32], ip_buf2[32];
+
+  if ( 0 == public_ip->addr_type.v4_addr ) {
+      /* Not to be registered. */
+      return;
+  }
+
+  if ( 0 == memcmp( mac_address, broadcast_mac, 6 ) )
+  {
+      /* Not to be registered. */
+      return;
+  }
+
 
   while(scan != NULL) {
     if(memcmp(mac_address, scan->mac_addr, 6) == 0) {
@@ -200,6 +228,8 @@ static void update_peer_address(int sock_fd, u_char is_udp_socket, char *mac_add
 
     /* Store the new IP address and port */
     memcpy(&scan->public_ip, public_ip, sizeof(struct peer_addr));
+
+    trace_registrations( known_peers );
 
     /* Force REGISTER packet to new IP address and port */
     send_register(sock_fd, is_udp_socket, public_ip, 0);
@@ -252,14 +282,15 @@ static void update_registrations(int sock_fd, u_char is_udp_socket) {
 
 static int find_peer_destination(u_char *mac_address, struct peer_addr *destination) {
   struct peer_info *scan = known_peers;
+  char mac_buf[32];
+  char ip_buf[32];
+  int retval=0;
 
   traceEvent(TRACE_INFO, "Searching destination peer for MAC %02X:%02X:%02X:%02X:%02X:%02X",
 	     mac_address[0] & 0xFF, mac_address[1] & 0xFF, mac_address[2] & 0xFF,
 	     mac_address[3] & 0xFF, mac_address[4] & 0xFF, mac_address[5] & 0xFF);
 
   while(scan != NULL) {
-    char ip_buf[32];
-
     traceEvent(TRACE_INFO, "Evaluating peer [MAC=%02X:%02X:%02X:%02X:%02X:%02X][ip=%s:%d]",
 	       scan->mac_addr[0] & 0xFF, scan->mac_addr[1] & 0xFF, scan->mac_addr[2] & 0xFF,
 	       scan->mac_addr[3] & 0xFF, scan->mac_addr[4] & 0xFF, scan->mac_addr[5] & 0xFF,
@@ -268,15 +299,28 @@ static int find_peer_destination(u_char *mac_address, struct peer_addr *destinat
     
     if((scan->last_seen > 0)
        && ((time(NULL)-scan->last_seen) < 60)
-       && (memcmp(mac_address, scan->mac_addr, 6) == 0)) {
-      memcpy(destination, &scan->public_ip, sizeof(struct peer_addr));
-      return(1);
+       && (memcmp(mac_address, scan->mac_addr, 6) == 0)) 
+    {
+        memcpy(destination, &scan->public_ip, sizeof(struct sockaddr_in));
+        retval=1;
+        break;
     }
     scan = scan->next;
   }
 
-  memcpy(destination, &supernode, sizeof(struct peer_addr));
-  return(0); /* Found default */
+  if ( 0 == retval )
+  {
+      memcpy(destination, &supernode, sizeof(struct sockaddr_in));
+  }
+
+  traceEvent(TRACE_INFO, "find_peer_address(%s) -> [socket=%s:%d]",
+             macaddr_str( (char *)mac_address, mac_buf, sizeof(mac_buf)),
+             intoa(ntohl(destination->addr_type.v4_addr), ip_buf, sizeof(ip_buf)),
+             ntohs(destination->port));
+
+
+
+  return retval;
 }
 
 /* *********************************************** */
@@ -292,6 +336,8 @@ static const struct option long_options[] = {
 
 /* ***************************************************** */
 
+
+/** A layer-2 packet was received at the tunnel and needs to be sent via UDP. */
 static void send_packet2net(int sock_fd, u_char is_udp_socket,
 			    char *decrypted_msg, size_t len,
 			    u_char allow_routed_packets) {
@@ -306,6 +352,8 @@ static void send_packet2net(int sock_fd, u_char is_udp_socket,
   /* Discard IP packets that are not originated by this hosts */
   if(!allow_routed_packets) {
     if(ntohs(eh->ether_type) == 0x0800) {
+
+      /* Note: all elements of the_ip are in network order */
       struct ip *the_ip = (struct ip*)(decrypted_msg+sizeof(struct ether_header));
 
       if(the_ip->ip_src.s_addr != device.ip_addr) {
@@ -440,6 +488,8 @@ static int check_received_packet(tuntap_dev *dev, char *pkt,
     struct ether_header *eh = (struct ether_header*)pkt;
 
     if(ntohs(eh->ether_type) == 0x0800) {
+
+      /* Note: all elements of the_ip are in network order */
       struct ip *the_ip = (struct ip*)(pkt+sizeof(struct ether_header));
 
       if((the_ip->ip_dst.s_addr != device.ip_addr)
@@ -656,7 +706,8 @@ int main(int argc, char* argv[]) {
 
 		  if(len > 0) {
 		    if(check_received_packet(&device, decrypted_msg, len, allow_routing) == 0) {
-		      update_peer_address(edge_sock_fd, is_udp_sock, hdr->src_mac, &hdr->public_ip, 0);
+                      /* do not register from PACKET, only on REGISTER_ACK */
+                      /* update_peer_address(edge_sock_fd, is_udp_sock, hdr->src_mac, &hdr->public_ip, time(NULL)); */
 		      data_sent_len = tuntap_write(&device, (u_char*)decrypted_msg, len);
 
 		      if(data_sent_len != len)
@@ -670,8 +721,11 @@ int main(int argc, char* argv[]) {
 		  traceEvent(TRACE_INFO, "Received registration request from remote peer [ip=%s:%d]",
 			     intoa(ntohl(hdr->public_ip.addr_type.v4_addr), ip_buf, sizeof(ip_buf)),
 			     ntohs(hdr->public_ip.port));
-		  update_peer_address(edge_sock_fd, is_udp_sock, hdr->src_mac, &hdr->public_ip, 0);
+                  /* do not register from PACKET, only on REGISTER_ACK */
+		  /* update_peer_address(edge_sock_fd, is_udp_sock, hdr->src_mac, &hdr->public_ip, 0); */
+
 		  send_register(edge_sock_fd, is_udp_sock, &hdr->public_ip, 1); /* Send ACK back */
+		  send_register(edge_sock_fd, is_udp_sock, &supernode, 1); /* Send ACK back via supernode too */
 		} else if(hdr->msg_type == MSG_TYPE_REGISTER_ACK) {
 		  traceEvent(TRACE_NORMAL, "Received registration ack from remote peer [ip=%s:%d]",
 			     intoa(ntohl(hdr->public_ip.addr_type.v4_addr), ip_buf, sizeof(ip_buf)),

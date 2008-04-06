@@ -243,7 +243,7 @@ extern void send_packet(int sock, u_char is_udp_socket,
 			char *packet, size_t *packet_len,
 			struct peer_addr *remote_peer,
 			u_int8_t compress_data);
-extern char* intoa(unsigned int addr, char* buf, u_short buf_len);
+extern char* intoa(u_int32_t addr, char* buf, u_short buf_len);
 extern char* macaddr_str(char *mac, char *buf, int buf_len);
 extern void fill_standard_header_fields(int sock, u_char use_udp_socket,
 					struct n2n_packet_header *hdr,
