@@ -207,44 +207,7 @@ static void handle_packet(char *packet, u_int packet_len,
 
     if(hdr->msg_type == MSG_TYPE_REGISTER) 
     {
-        /* Broadcast the registration to all known edge hosts. */
-        struct n2n_packet_header hdr2;
-        struct peer_info *scan;
         register_peer(hdr, sender, sock_fd, is_udp_socket);
-
-        hdr2=*hdr;
-        hdr2.public_ip=*sender; /* The sender doesn't know this so we forward it. */
-
-        marshall_n2n_packet_header( (u_int8_t *)packet, &hdr2 );
-
-        scan = known_peers;
-        while(scan != NULL) 
-        {
-            if((strcmp(scan->community_name, hdr->community_name) == 0)
-               && (memcmp(&sender, &scan->public_ip, sizeof(struct sockaddr_in)) /* No L3 self-send */)
-               && (memcmp(hdr->dst_mac, hdr->src_mac, 6) /* No L2 self-send */)) 
-            {
-                size_t len = packet_len;
-                int data_sent_len = send_data(scan->sock_fd, scan->is_udp_socket, packet, &len, &scan->public_ip, 0);
-          
-                if(data_sent_len != len)
-                    traceEvent(TRACE_WARNING, "sendto() [sent=%d][attempted_to_send=%d] [%s]\n",
-                               data_sent_len, len, strerror(errno));
-                else {
-                    char buf1[32];
-
-                    traceEvent(TRACE_INFO, "Forwarding REGISTER to remote node [%s:%d][mac=%s]",
-                               intoa(ntohl(scan->public_ip.addr_type.v4_addr), buf, sizeof(buf)), 
-                               ntohs(scan->public_ip.port),
-                               macaddr_str(scan->mac_addr, buf1, sizeof(buf1)));
-                }
-            
-                // if(!is_dst_broad_multi_cast) break;
-            }
-        
-            scan = scan->next;
-        } /* while */
-
     }
     else if(hdr->msg_type == MSG_TYPE_DEREGISTER) {
       deregister_peer(hdr, sender);
