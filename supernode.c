@@ -17,8 +17,13 @@
 
 #include "n2n.h"
 
-#define PURGE_REGISTRATION_FREQUENCY   60
-#define REGISTRATION_TIMEOUT          120
+#if defined(DEBUG)
+#   define PURGE_REGISTRATION_FREQUENCY   60
+#   define REGISTRATION_TIMEOUT          120
+#else /* #if defined(DEBUG) */
+#   define PURGE_REGISTRATION_FREQUENCY   60
+#   define REGISTRATION_TIMEOUT           (60*5)
+#endif /* #if defined(DEBUG) */
 
 static u_int pkt_sent = 0;
 
@@ -45,20 +50,26 @@ static void register_peer(struct n2n_packet_header *hdr,
   while(scan != NULL) {
     if((strcmp(scan->community_name, hdr->community_name) == 0)
        && (memcmp(&scan->mac_addr, hdr->src_mac, 6) == 0)) {
-      memcpy(&scan->public_ip, sender, sizeof(struct peer_addr));
-      memcpy(&scan->private_ip, &hdr->private_ip, sizeof(struct peer_addr));
+
       scan->last_seen = time(NULL);
+      if ( ( 0 != memcmp(&scan->public_ip, sender, sizeof(struct peer_addr)) ) ||
+             ( 0 != memcmp(&scan->private_ip, &hdr->private_ip, sizeof(struct peer_addr)) ) ) 
+      {
+        /* Something is actually different. */
+        memcpy(&scan->public_ip, sender, sizeof(struct peer_addr));
+        memcpy(&scan->private_ip, &hdr->private_ip, sizeof(struct peer_addr));
 
-      /* Overwrite existing peer */
-      traceEvent(TRACE_INFO, "Re-registered new node [public_ip=%s:%d][private_ip=%s:%d][mac=%s][community=%s]",
-		 intoa(ntohl(scan->public_ip.addr_type.v4_addr), buf, sizeof(buf)),
-		 ntohs(scan->public_ip.port),
-		 intoa(ntohl(scan->private_ip.addr_type.v4_addr), buf1, sizeof(buf1)),
-		 ntohs(scan->private_ip.port),
-		 macaddr_str(scan->mac_addr, mac_buf, sizeof(mac_buf)),
-		 scan->community_name);
-
-      return;
+        /* Overwrite existing peer */
+        traceEvent(TRACE_NORMAL, "Re-registered node [public_ip=%s:%d][private_ip=%s:%d][mac=%s][community=%s]",
+                   intoa(ntohl(scan->public_ip.addr_type.v4_addr), buf, sizeof(buf)),
+                   ntohs(scan->public_ip.port),
+                   intoa(ntohl(scan->private_ip.addr_type.v4_addr), buf1, sizeof(buf1)),
+                   ntohs(scan->private_ip.port),
+                   macaddr_str(scan->mac_addr, mac_buf, sizeof(mac_buf)),
+                   scan->community_name);
+      }
+      
+      return; /* Found the registration entry so stop. */
     }
 
     scan = scan->next;
@@ -76,7 +87,7 @@ static void register_peer(struct n2n_packet_header *hdr,
   scan->sock_fd = sock_fd, scan->is_udp_socket = is_udp_socket;
   known_peers = scan;
 
-  traceEvent(TRACE_INFO, "Registered new node [public_ip=%s:%d][private_ip=%s:%d][mac=%s][community=%s]",
+  traceEvent(TRACE_NORMAL, "Registered new node [public_ip=%s:%d][private_ip=%s:%d][mac=%s][community=%s]",
 	     intoa(ntohl(scan->public_ip.addr_type.v4_addr), buf, sizeof(buf)),
 	     ntohs(scan->public_ip.port),
 	     intoa(ntohl(scan->private_ip.addr_type.v4_addr), buf1, sizeof(buf1)),
@@ -143,7 +154,7 @@ static void purge_expired_registrations() {
       else
 	prev->next = next;
 
-      traceEvent(TRACE_INFO, "Purged registration for host [%s:%d][mac=%s][last seen %d sec ago]",
+      traceEvent(TRACE_NORMAL, "Purged registration for host [%s:%d][mac=%s][last seen %d sec ago]",
 		 intoa(ntohl(scan->public_ip.addr_type.v4_addr), buf, sizeof(buf)),
 		 ntohs(scan->public_ip.port),
 		 macaddr_str(scan->mac_addr, mac_buf, sizeof(mac_buf)),

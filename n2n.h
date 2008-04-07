@@ -189,7 +189,13 @@ struct recv_hash_entry {
 #define SEND_SEQ_ID_HASH_LEN      1024
 #define RECV_SEQ_ID_HASH_LEN      SEND_SEQ_ID_HASH_LEN
 
-#define REGISTER_FREQUENCY   10 /* sec */
+#if defined(DEBUG)
+#define SOCKET_TIMEOUT_INTERVAL_SECS    5
+#define REGISTER_FREQUENCY              20 /* sec */
+#else  /* #if defined(DEBUG) */
+#define SOCKET_TIMEOUT_INTERVAL_SECS    10
+#define REGISTER_FREQUENCY              60 /* sec */
+#endif /* #if defined(DEBUG) */
 
 #define TRACE_ERROR     0, __FILE__, __LINE__
 #define TRACE_WARNING   1, __FILE__, __LINE__

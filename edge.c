@@ -92,6 +92,9 @@ static int build_gratuitous_arp(char *buffer, u_short buffer_len) {
   memcpy(&buffer[6], device.mac_addr, 6);
   memcpy(&buffer[22], device.mac_addr, 6);
   memcpy(&buffer[28], &device.ip_addr, 4);
+
+  /* REVISIT: BbMaj7 - use a real netmask here. This is valid only by accident
+   * for /24 IPv4 networks. */
   buffer[31] = 0xFF; /* Use a faked broadcast address */
   memcpy(&buffer[38], &device.ip_addr, 4);
   return(sizeof(gratuitous_arp));
@@ -141,6 +144,7 @@ static void send_deregister(int sock, u_char is_udp_socket,
 /* *********************************************** */
 
 void trace_registrations( struct peer_info * scan );
+int is_ip6_discovery( const void * buf, size_t bufsize );
 
 void trace_registrations( struct peer_info * scan )
 {
@@ -194,8 +198,6 @@ static void update_peer_address(int sock_fd, u_char is_udp_socket, char *mac_add
       traceEvent(TRACE_WARNING, "Not enough memory");
       return;
     }
-
-    memset(scan, 0, sizeof(scan) ); /* make sure it is all zeroed so we don't get random effects */
 
     memcpy(scan->mac_addr, mac_address, 6);
 
@@ -253,10 +255,16 @@ static void check_address_duplication(int sock_fd, u_char is_udp_socket) {
 
 /* *********************************************** */
 
+/** @brief Check to see if we should re-register with our peers and the
+ *         supernode.
+ */
 static void update_registrations(int sock_fd, u_char is_udp_socket) {
   struct peer_info *scan;
 
   traceEvent(TRACE_INFO, "Updating registrations");
+
+  /* REVISIT: BbMaj7: have shorter timeout to REGISTER to supernode if this has
+   * not yet succeeded. */
 
   if(time(NULL) < (last_register+REGISTER_FREQUENCY)) return; /* Too early */
 
@@ -274,6 +282,8 @@ static void update_registrations(int sock_fd, u_char is_udp_socket) {
     send_register(sock_fd, is_udp_socket, &scan->public_ip, 0); /* Register with peers */
     scan = scan->next;
   }
+
+  check_address_duplication(sock_fd, is_udp_sock); /* Send gratuitous ARP */
 
   last_register = time(NULL);
 }
@@ -384,12 +394,12 @@ static void send_packet2net(int sock_fd, u_char is_udp_socket,
   len += N2N_PKT_HDR_SIZE;
 
   if(find_peer_destination(eh->ether_dhost, &destination))
-    traceEvent(TRACE_INFO, "** Using direct peer communication [dst_mac=%s][dest=%s:%d]",
+    traceEvent(TRACE_INFO, "** Going direct [dst_mac=%s][dest=%s:%d]",
 	       macaddr_str((char*)eh->ether_dhost, mac_buf, sizeof(mac_buf)),
 	       intoa(ntohl(destination.addr_type.v4_addr), ip_buf, sizeof(ip_buf)),
 	       ntohs(destination.port));
   else
-    traceEvent(TRACE_INFO, "** Using supernode peer communication [src_mac=%s][dst_mac=%s]",
+    traceEvent(TRACE_INFO, "   Going via supernode [src_mac=%s][dst_mac=%s]",
 	       macaddr_str((char*)eh->ether_shost, mac_buf, sizeof(mac_buf)),
 	       macaddr_str((char*)eh->ether_dhost, mac2_buf, sizeof(mac2_buf)));
 
@@ -400,11 +410,29 @@ static void send_packet2net(int sock_fd, u_char is_udp_socket,
 	       data_sent_len, len, strerror(errno));
   else {
     pkt_sent++;
-    traceEvent(TRACE_INFO, "Sent message to supernode");
+    traceEvent(TRACE_INFO, "Sent %d byte MSG_TYPE_PACKET ok", data_sent_len);
   }
 }
 
 /* ***************************************************** */
+
+/** Destination MAC 33:33:0:00:00:00 - 33:33:FF:FF:FF:FF is reserved for IPv6
+ * neighbour discovery. 
+ */
+int is_ip6_discovery( const void * buf, size_t bufsize )
+{
+    int retval = 0;
+    if ( bufsize >= sizeof(struct ether_header) )
+    {
+        struct ether_header *eh = (struct ether_header*)buf;
+        if ( (0x33 == eh->ether_dhost[0]) &&
+             (0x33 == eh->ether_dhost[1]) )
+        {
+            retval = 1; /* This is an IPv6 neighbour discovery packet. */
+        }
+    }
+    return retval;
+}
 
 static
 #ifdef WIN32
@@ -418,16 +446,21 @@ DWORD tunReadThread(LPVOID lpArg )
     u_char decrypted_msg[2048];
     size_t len;
 
-    traceEvent(TRACE_INFO, "### Msg tun-> network");
-
     len = tuntap_read(&device, decrypted_msg, sizeof(decrypted_msg));
 
     if((len <= 0) || (len > sizeof(decrypted_msg)))
       traceEvent(TRACE_WARNING, "read()=%d [%d/%s]\n",
 		 len, errno, strerror(errno));
-    else
-      send_packet2net(edge_sock_fd, is_udp_sock, (char*)decrypted_msg,
-		      len, allow_routing);
+    else {
+      traceEvent(TRACE_INFO, "### Rx L2 Msg (%d) tun -> network", len);
+
+      if ( is_ip6_discovery( decrypted_msg, len ) ) {
+        traceEvent(TRACE_WARNING, "Dropping unsupported IPv6 neighbour discovery packet");
+      } else {
+        send_packet2net(edge_sock_fd, is_udp_sock, (char*)decrypted_msg,
+                        len, allow_routing);
+      }
+    }
   }
 
   return(
@@ -520,7 +553,8 @@ static int check_received_packet(tuntap_dev *dev, char *pkt,
 
 int main(int argc, char* argv[]) {
   int opt, local_port = 0 /* any port */;
-  char *tuntap_dev_name = NULL, *ip_addr = NULL, buf[32];
+  char *tuntap_dev_name = "edge0";
+  char *ip_addr = NULL, buf[32];
 
 #ifdef WIN32
   tuntap_dev_name = "";
@@ -614,8 +648,9 @@ int main(int argc, char* argv[]) {
   }
 
   update_registrations(edge_sock_fd, is_udp_sock);
-  check_address_duplication(edge_sock_fd, is_udp_sock);
+  /* check_address_duplication(edge_sock_fd, is_udp_sock); now done in update_registrations() */
 
+  traceEvent(TRACE_NORMAL, "");
   traceEvent(TRACE_NORMAL, "Ready");
 
   startTunReadThread();
@@ -629,7 +664,7 @@ int main(int argc, char* argv[]) {
     FD_SET(edge_sock_fd, &socket_mask);
     max_sock = edge_sock_fd;
 
-    wait_time.tv_sec = REGISTER_FREQUENCY; wait_time.tv_usec = 0;
+    wait_time.tv_sec = SOCKET_TIMEOUT_INTERVAL_SECS; wait_time.tv_usec = 0;
 
     rc = select(max_sock+1, &socket_mask, NULL, NULL, &wait_time);
 
@@ -644,12 +679,12 @@ int main(int argc, char* argv[]) {
 	u_int8_t discarded_pkt;
 	struct n2n_packet_header hdr_storage;
 
-	traceEvent(TRACE_INFO, "### Msg network -> tun");
-
 	len = receive_data(edge_sock_fd, is_udp_sock, packet, sizeof(packet), &sender,
 			   &discarded_pkt, (char*)device.mac_addr, 1, &hdr_storage);
 
 	if(len <= 0) continue;
+
+	traceEvent(TRACE_INFO, "### Rx N2N Msg network -> tun");
 
 	if(discarded_pkt) {
 	  traceEvent(TRACE_INFO, "Discarded incoming pkt");
@@ -712,6 +747,10 @@ int main(int argc, char* argv[]) {
 		      if(data_sent_len != len)
 			traceEvent(TRACE_WARNING, "tuntap_write() [sent=%d][attempted_to_send=%d] [%s]\n",
 				   data_sent_len, len, strerror(errno));
+                      else {
+                        /* Normal situation. */
+                        traceEvent(TRACE_INFO, "### Tx L2 Msg -> tun");
+                      }
 		    } else {
 		      traceEvent(TRACE_WARNING, "Bad destination: message discarded");
 		    }

@@ -386,7 +386,7 @@ void traceEvent(int eventTraceLevel, char* file, int line, char * format, ...) {
       extra_msg = "WARNING: ";
 
     while(buf[strlen(buf)-1] == '\n') buf[strlen(buf)-1] = '\0';
-    snprintf(out_buf, sizeof(out_buf), "%s [%s:%d] %s%s", theDate, file, line, extra_msg, buf);
+    snprintf(out_buf, sizeof(out_buf), "%s [%10s:%4d] %s%s", theDate, file, line, extra_msg, buf);
 
 #ifndef WIN32
     if(useSyslog) {
@@ -761,6 +761,10 @@ u_int send_data(int sock_fd, u_char is_udp_socket,
 		 intoa(ntohl(to->addr_type.v4_addr), ip_buf, sizeof(ip_buf)), 
 		 ntohs(to->port));
     }
+  }
+
+  if ( rc >= 0) {
+    traceEvent(TRACE_INFO, "### Tx N2N Msg -> network");
   }
 
   if(rc == compressed_len)

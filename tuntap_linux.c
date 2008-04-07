@@ -42,7 +42,7 @@ static void read_mac(char *ifname, char *mac_addr) {
 }
 
 /* ********************************** */
-/** @brief  Open and configure teh TAP device for packet read/write.
+/** @brief  Open and configure the TAP device for packet read/write.
  *
  *  This routine creates the interface via the tuntap driver then uses ifconfig
  *  to configure address/mask and MTU.
@@ -106,4 +106,4 @@ void tuntap_close(struct tuntap_dev *tuntap) {
   close(tuntap->fd);
 }
 
-#endif
+#endif /* #ifdef __linux__ */
