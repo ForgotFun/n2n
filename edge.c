@@ -741,7 +741,7 @@ int main(int argc, char* argv[]) {
 
 		  if(len > 0) {
 		    if(check_received_packet(&device, decrypted_msg, len, allow_routing) == 0) {
-                      update_peer_address(edge_sock_fd, is_udp_sock, hdr->src_mac, &hdr->public_ip, time(NULL));
+                      update_peer_address(edge_sock_fd, is_udp_sock, hdr->src_mac, &hdr->public_ip, 0);
 		      data_sent_len = tuntap_write(&device, (u_char*)decrypted_msg, len);
 
 		      if(data_sent_len != len)
@@ -759,7 +759,7 @@ int main(int argc, char* argv[]) {
 		  traceEvent(TRACE_INFO, "Received registration request from remote peer [ip=%s:%d]",
 			     intoa(ntohl(hdr->public_ip.addr_type.v4_addr), ip_buf, sizeof(ip_buf)),
 			     ntohs(hdr->public_ip.port));
-		  update_peer_address(edge_sock_fd, is_udp_sock, hdr->src_mac, &hdr->public_ip, time(NULL));
+		  update_peer_address(edge_sock_fd, is_udp_sock, hdr->src_mac, &hdr->public_ip, 0);
 
 		  send_register(edge_sock_fd, is_udp_sock, &hdr->public_ip, 1); /* Send ACK back */
 		} else if(hdr->msg_type == MSG_TYPE_REGISTER_ACK) {
