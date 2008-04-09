@@ -1,5 +1,5 @@
 
-N2N_VERSION="1.0.1"
+N2N_VERSION="1.1"
 
 
 ########
