@@ -1,5 +1,7 @@
 file: HACKING
 
+Last updated: 2008-04-10
+
 --------
 (C) 2008 - Richard Andrews <BbMaj7@yahoo.com.au>
 
@@ -22,6 +24,20 @@ along with this program; if not see see <http://www.gnu.org/licenses/>
 This file describes the internals of n2n. Read this before starting to modify
 the code. Because coding examples may be present in this document it is licensed
 under the GPL rather than FDL.
+
+
+SYMMETRIC NAT
+-------------
+
+Symmetric NAT is a form of firewall NAT in which an UDP packets are only passed
+back to an inside host socket when the return packets originate from the outside
+socket to which the initiating UDP packets were sent. This means that when an
+inside host sends UDP to some outside socket; other hosts cannot piggyback on
+this opening in the firewall to send data to the inside host.
+
+When two inside hosts are both behind symmetric NAT, peer-to-peer packet
+exchange is not possible via n2n. These hosts will require the supernode to
+relay packets.
 
 
 ARP CACHE
@@ -77,6 +93,69 @@ The supernode never forwards REGISTER messages because the public socket seen by
 the supervisor for some edge (eg. A) may be different to the socket seen by
 another edge due to the actions of symmetric NAT (alocating a new public socket
 for the new outbound UDP "connection").
+
+
+EDGE REGISTRATION DESIGN AMMENDMENTS (starting from 2008-04-10)
+------------------------------------
+
+ * Send REGISTER on rx of PACKET or REGISTER only when dest_mac == device MAC
+(do not send REGISTER on Rx of broadcast packets).
+ * After sending REGISTER add the new peer to pending_peers list; but
+ * Don't send REGISTER to a peer in pending_peers list
+ * Remove old entries from pending_peers at regular intervals
+ * On rx of REGISTER_ACK, move peer from pending_peers to known_peers for direct
+comms and set last_seen=now
+ * On rx of any packet set last_seen=now in the known_peers entry (if it
+exists); but do not add a new entry.
+
+
+The pending_peers list concept is to prevent massive registration traffic when
+supernode relay is in force - this would occur if REGISTER was sent for every
+incident packet sent via supernode. Periodic REGISTER attempts will still occur;
+not for every received packet. In the case where the peer cannot be contacted
+(eg. both peers behind symmetric NAT), then there will still be periodic
+attempts. Suggest a pending timeout of about 60 sec.
+
+A peer is only considered operational for peer-to-peer sending when a
+REGISTER_ACK is returned. Once operational the peer is kept operational while
+any direct packet communications are occurring. REGISTER is not required to
+keep the path open through any firewalls; just some activity in one direction.
+
+After an idle period; the peer should be deleted from the known_peers list. We
+should not try to re-register when this time expires. If there is no data to
+send then forget the peer. This helps scalability.
+
+If a peer wants to be remembered it can send gratuitous ARP traffic which will
+keep its entry in the known_peers list of any peers which already have the
+entry.
+
+
+
+
+peer = find_by_src_mac( hdr, known_peers ); /* return NULL or entry */
+
+if ( peer )
+{
+    peer_last_seen = time(NULL);
+}
+else
+{
+    if ( ! is_broadcast( hdr ) ) /* ignore broadcasts */
+    {
+        if ( IS_REGISTER_ACK( hdr ) )
+        {
+            /* move from pending to known_peers */
+            set_peer_operational( hdr );
+        }
+        else
+        {
+            /* add to pending and send REGISTER - ignore if in pending. */
+            try_send_register( hdr ) 
+        }
+    }
+}
+
+
 
 GRATUITOUS ARP
 --------------

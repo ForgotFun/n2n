@@ -25,7 +25,7 @@ supernode: supernode.c $(N2N_LIB) n2n.h Makefile
 	$(CC) $(CFLAGS) -c $<
 
 $(N2N_LIB): $(N2N_OBJS)
-	ar rc $(N2N_LIB) $(N2N_OBJS)
+	ar rcs $(N2N_LIB) $(N2N_OBJS)
 #	$(RANLIB) $@
 
 version.c:

@@ -13,6 +13,10 @@
  *
  * You should have received a copy of the GNU General Public License
  * along with this program; if not, see <http://www.gnu.org/licenses/>
+ *
+ * Code contributions courtesy of:
+ * Richard Andrews <bbmaj7@yahoo.com.au>
+ *
 */
 
 #ifndef _N2N_H_
