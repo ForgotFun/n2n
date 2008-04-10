@@ -227,7 +227,7 @@ extern char multicast_addr[6];
 
 /* Functions */
 extern void sockaddr_in2peer_addr(struct sockaddr_in *in, struct peer_addr *out);
-extern void peer_addr2sockaddr_in(struct peer_addr *in, struct sockaddr_in *out);
+extern void peer_addr2sockaddr_in(const struct peer_addr *in, struct sockaddr_in *out);
 extern int  init_n2n(u_int8_t *encrypt_pwd, u_int32_t encrypt_pwd_len );
 extern void term_n2n();
 extern void send_ack(int sock_fd, u_char is_udp_socket,
@@ -247,7 +247,7 @@ extern int connect_socket(int sock_fd, struct peer_addr* dest);
 
 extern void send_packet(int sock, u_char is_udp_socket,
 			char *packet, size_t *packet_len,
-			struct peer_addr *remote_peer,
+			const struct peer_addr *remote_peer,
 			u_int8_t compress_data);
 extern char* intoa(u_int32_t addr, char* buf, u_short buf_len);
 extern char* macaddr_str(char *mac, char *buf, int buf_len);
@@ -262,18 +262,22 @@ extern u_int receive_data(int sock_fd, u_char is_udp_socket,
 			  struct n2n_packet_header *hdr);
 extern u_int reliable_sendto(int sock_fd, u_char is_udp_socket,
 			     char *packet, size_t *packet_len, 
-			     struct peer_addr *from, u_int8_t compress_data);
+			     const struct peer_addr *from, u_int8_t compress_data);
 extern u_int unreliable_sendto(int sock_fd, u_char is_udp_socket,
 			       char *packet, size_t *packet_len, 
-			       struct peer_addr *from, u_int8_t compress_data);
+			       const struct peer_addr *from, u_int8_t compress_data);
 extern u_int send_data(int sock_fd,  u_char is_udp_socket,
 		       char *packet, size_t *packet_len, 
-		       struct peer_addr *to, u_int8_t compress_data);
+		       const struct peer_addr *to, u_int8_t compress_data);
 extern u_int8_t is_multi_broadcast(char *dest_mac);
 extern char* msg_type2str(u_short msg_type);
 extern void hexdump(char *buf, u_int len);
 
 void print_n2n_version();
+size_t purge_peer_list( struct peer_info ** peer_list, 
+                        time_t purge_before );
+
+void purge_expired_registrations( struct peer_info ** peer_list );
 
 /* version.c */
 extern char *version, *osName, *buildDate;

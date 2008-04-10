@@ -25,6 +25,15 @@
 
 #include <assert.h>
 
+#if defined(DEBUG)
+#   define PURGE_REGISTRATION_FREQUENCY   60
+#   define REGISTRATION_TIMEOUT          120
+#else /* #if defined(DEBUG) */
+#   define PURGE_REGISTRATION_FREQUENCY   60
+#   define REGISTRATION_TIMEOUT           (60*5)
+#endif /* #if defined(DEBUG) */
+
+
 char broadcast_addr[6] = { 0xFF, 0xFF, 0xFF, 0xFF, 0xFF, 0xFF };
 char multicast_addr[6] = { 0x01, 0x00, 0x05, 0x00, 0x00, 0x00 }; /* First 3 bytes are meaningful */
 
@@ -58,7 +67,7 @@ extern void sockaddr_in2peer_addr(struct sockaddr_in *in, struct peer_addr *out)
 
 /* *********************************************** */
 
-extern void peer_addr2sockaddr_in(struct peer_addr *in, struct sockaddr_in *out) {
+extern void peer_addr2sockaddr_in(const struct peer_addr *in, struct sockaddr_in *out) {
   out->sin_family      = in->family;
   out->sin_port        = in->port;
   out->sin_addr.s_addr = in->addr_type.v4_addr;
@@ -342,7 +351,7 @@ int connect_socket(int sock_fd, struct peer_addr* _dest) {
 
 void send_packet(int sock, u_char is_udp_socket, 
 		 char *packet, size_t *packet_len,
-		 struct peer_addr *remote_peer, u_int8_t compress_data) {
+		 const struct peer_addr *remote_peer, u_int8_t compress_data) {
   int data_sent_len;
 
   data_sent_len = unreliable_sendto(sock, is_udp_socket,
@@ -386,7 +395,7 @@ void traceEvent(int eventTraceLevel, char* file, int line, char * format, ...) {
       extra_msg = "WARNING: ";
 
     while(buf[strlen(buf)-1] == '\n') buf[strlen(buf)-1] = '\0';
-    snprintf(out_buf, sizeof(out_buf), "%s [%10s:%4d] %s%s", theDate, file, line, extra_msg, buf);
+    snprintf(out_buf, sizeof(out_buf), "%s [%11s:%4d] %s%s", theDate, file, line, extra_msg, buf);
 
 #ifndef WIN32
     if(useSyslog) {
@@ -699,7 +708,7 @@ static HEAP_ALLOC(wrkmem,LZO1X_1_MEM_COMPRESS);
 
 u_int send_data(int sock_fd, u_char is_udp_socket, 
 		char *packet, size_t *packet_len, 
-		struct peer_addr *to, u_int8_t compress_data) {
+		const struct peer_addr *to, u_int8_t compress_data) {
   char compressed[1600];
   int rc;
   lzo_uint compressed_len;
@@ -777,7 +786,7 @@ u_int send_data(int sock_fd, u_char is_udp_socket,
 
 u_int reliable_sendto(int sock_fd, u_char is_udp_socket,
 		      char *packet, size_t *packet_len, 
-		      struct peer_addr *to, u_int8_t compress_data) {
+		      const struct peer_addr *to, u_int8_t compress_data) {
   char *payload = &packet[N2N_PKT_HDR_SIZE];
   struct n2n_packet_header hdr_storage;
   struct n2n_packet_header *hdr = &hdr_storage;
@@ -806,7 +815,7 @@ u_int reliable_sendto(int sock_fd, u_char is_udp_socket,
  * the unreliable flags but leave the rest of the packet untouched. */
 u_int unreliable_sendto(int sock_fd, u_char is_udp_socket,
 			char *packet, size_t *packet_len, 
-			struct peer_addr *to, u_int8_t compress_data) {
+			const struct peer_addr *to, u_int8_t compress_data) {
   struct n2n_packet_header hdr_storage;
   struct n2n_packet_header *hdr = &hdr_storage;
   char src_mac_buf[32], dst_mac_buf[32];
@@ -863,3 +872,59 @@ void print_n2n_version() {
          "Copyright 2007-08 by Luca Deri <deri@ntop.org>\n\n",
          version, osName, buildDate);
 }
+
+void purge_expired_registrations( struct peer_info ** peer_list ) {
+  static time_t last_purge = 0;
+  time_t now = time(NULL);
+  u_int num_reg = 0;
+
+  if((now - last_purge) < PURGE_REGISTRATION_FREQUENCY) return;
+
+  traceEvent(TRACE_INFO, "Purging old registrations");
+
+  num_reg = purge_peer_list( peer_list, now-REGISTRATION_TIMEOUT );
+
+  last_purge = now;
+  traceEvent(TRACE_INFO, "Remove %d registrations", num_reg);
+}
+
+/** Purge old items from the peer_list and return the number of items that were removed. */
+size_t purge_peer_list( struct peer_info ** peer_list, 
+                        time_t purge_before ) 
+{
+    struct peer_info *scan;
+    struct peer_info *prev;
+    size_t retval=0;
+
+    scan = *peer_list;
+    prev = NULL;
+    while(scan != NULL) 
+    {
+        if(scan->last_seen < purge_before) 
+        {
+            struct peer_info *next = scan->next;
+
+            if(prev == NULL)
+            {
+                *peer_list = next;
+            }
+            else
+            {
+                prev->next = next;
+            }
+
+            ++retval;
+            free(scan);
+            scan = next;
+        } 
+        else 
+        {
+            prev = scan;
+            scan = scan->next;
+        }
+    }
+
+    return retval;
+}
+
+

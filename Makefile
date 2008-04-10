@@ -5,7 +5,7 @@ N2N_VERSION="1.1"
 ########
 
 CC=gcc
-CFLAGS=-g -Wall -Wshadow -Wpointer-arith -Wmissing-declarations -Wnested-externs #-static
+CFLAGS+=-g -Wall -Wshadow -Wpointer-arith -Wmissing-declarations -Wnested-externs #-static
 
 N2N_LIB=n2n.a
 N2N_OBJS=n2n.o minilzo.o twofish.o tuntap_linux.o tuntap_osx.o version.o

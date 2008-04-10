@@ -17,14 +17,6 @@
 
 #include "n2n.h"
 
-#if defined(DEBUG)
-#   define PURGE_REGISTRATION_FREQUENCY   60
-#   define REGISTRATION_TIMEOUT          120
-#else /* #if defined(DEBUG) */
-#   define PURGE_REGISTRATION_FREQUENCY   60
-#   define REGISTRATION_TIMEOUT           (60*5)
-#endif /* #if defined(DEBUG) */
-
 static u_int pkt_sent = 0;
 
 /* *********************************************** */
@@ -131,54 +123,6 @@ static void deregister_peer(struct n2n_packet_header *hdr,
 }
 
 /* *********************************************** */
-
-static void purge_expired_registrations() {
-  static time_t last_purge = 0;
-  time_t now = time(NULL);
-  struct peer_info *scan, *prev;
-  u_int num_reg = 0;
-
-  if((now - last_purge) < PURGE_REGISTRATION_FREQUENCY) return;
-
-  traceEvent(TRACE_INFO, "Purging old registrations");
-
-  scan = known_peers, prev = NULL;
-  while(scan != NULL) {
-    char mac_buf[32], buf[32];
-
-    if((now - scan->last_seen) > REGISTRATION_TIMEOUT) {
-      struct peer_info *next = scan->next;
-
-      if(prev == NULL)
-	known_peers = next;
-      else
-	prev->next = next;
-
-      traceEvent(TRACE_NORMAL, "Purged registration for host [%s:%d][mac=%s][last seen %d sec ago]",
-		 intoa(ntohl(scan->public_ip.addr_type.v4_addr), buf, sizeof(buf)),
-		 ntohs(scan->public_ip.port),
-		 macaddr_str(scan->mac_addr, mac_buf, sizeof(mac_buf)),
-		 (now - scan->last_seen));
-
-      free(scan);
-      scan = next;
-    } else {
-      num_reg++;
-
-      traceEvent(TRACE_INFO, "== [%d] Registration [ip=%s:%d][mac=%s][community=%s][last seen %d sec ago]",
-		 num_reg, intoa(ntohl(scan->public_ip.addr_type.v4_addr), buf, sizeof(buf)),
-                 ntohs(scan->public_ip.port),
-		 macaddr_str(scan->mac_addr, mac_buf, sizeof(mac_buf)),
-		 scan->community_name, (now - scan->last_seen));
-
-      prev = scan;
-      scan = scan->next;
-    }
-  }
-
-  last_purge = now;
-  traceEvent(TRACE_INFO, "%d active registrations", num_reg);
-}
 
 /* *********************************************** */
 
@@ -439,7 +383,7 @@ int main(int argc, char* argv[]) {
       }
     }
 
-    purge_expired_registrations();
+    purge_expired_registrations( &known_peers );
   } /* while */
 
   close(udp_sock_fd);

@@ -16,7 +16,7 @@
  */
 
 #include "n2n.h"
-
+#include <assert.h>
 
 static struct peer_addr supernode;
 static char *community_name = NULL, is_udp_sock = 1;
@@ -81,6 +81,7 @@ static void help() {
 /* *********************************************** */
 
 static struct peer_info *known_peers = NULL;
+static struct peer_info *pending_peers = NULL;
 static time_t last_register = 0;
 
 /* *********************************************** */
@@ -100,10 +101,11 @@ static int build_gratuitous_arp(char *buffer, u_short buffer_len) {
   return(sizeof(gratuitous_arp));
 }
 
+
 /* *********************************************** */
 
 static void send_register(int sock, u_char is_udp_socket,
-			  struct peer_addr *remote_peer, 
+			  const struct peer_addr *remote_peer, 
 			  u_char is_ack) {
   struct n2n_packet_header hdr;
   char pkt[N2N_PKT_HDR_SIZE];
@@ -145,6 +147,88 @@ static void send_deregister(int sock, u_char is_udp_socket,
 
 void trace_registrations( struct peer_info * scan );
 int is_ip6_discovery( const void * buf, size_t bufsize );
+struct peer_info * find_peer_by_mac( struct peer_info * list,
+                                     const char * mac );
+void peer_list_add( struct peer_info * * list, 
+                    struct peer_info * new );
+void try_send_register( int sock, 
+                        u_char is_up_socket, 
+                        const struct n2n_packet_header * hdr );
+void set_peer_operational( struct peer_info * scan );
+
+
+
+/** Start the registration process.
+ *
+ *  If the peer is already in pending_peers, ignore the request.
+ *  If not in pending_peers, add it and send a REGISTER.
+ *
+ *  Called from the main loop when Rx a packet for our device mac.
+ */
+void try_send_register( int sock, 
+                        u_char is_udp_socket, 
+                        const struct n2n_packet_header * hdr )
+{
+    struct peer_info * scan = find_peer_by_mac( pending_peers, hdr->src_mac );
+
+    if ( NULL == scan )
+    {
+        scan = calloc( 1, sizeof( struct peer_info ) );
+        
+        memcpy(scan->mac_addr, hdr->src_mac, 6);
+        scan->public_ip = hdr->public_ip;
+
+        peer_list_add( &pending_peers, scan );
+
+        send_register(sock, is_udp_socket,
+                      &(scan->public_ip), 
+                      0 /* is not ACK */ );
+        scan = NULL;
+    }
+    /* else ignore the request. */
+}
+
+
+/* Move the peer from the pending_peers list to the known_peers lists. 
+ *
+ * peer must be a pointer to an element of the pending_peers list.
+ *
+ * Called by main loop when Rx a REGISTER_ACK.
+ */
+void set_peer_operational( struct peer_info * peer )
+{
+    struct peer_info * prev = NULL;
+    struct peer_info * scan;
+
+    /* Debugging: this whole check is compiled out for NDEBUG. 
+     * Make sure the peer does not already exist in known_peers */
+    assert( NULL == find_peer_by_mac( known_peers, peer->mac_addr ) );
+
+    scan=pending_peers;
+
+    while ( scan != peer )
+    {
+        prev = scan;
+        scan = scan->next;
+    }
+
+    /* Remove scan from pending_peers. */
+    if ( prev )
+    {
+        prev->next = scan->next;
+    }
+    else
+    {
+        pending_peers = scan->next;
+    }
+
+    /* Add scan to known_peers. */
+    scan->next = known_peers;
+    known_peers = scan;
+
+    scan->last_seen = time(NULL);
+}
+
 
 void trace_registrations( struct peer_info * scan )
 {
@@ -257,9 +341,12 @@ static void check_address_duplication(int sock_fd, u_char is_udp_socket) {
 
 /** @brief Check to see if we should re-register with our peers and the
  *         supernode.
+ *
+ *  This is periodically called by the main loop. The list of registrations is
+ *  not modified. Registration packets may be sent.
  */
 static void update_registrations(int sock_fd, u_char is_udp_socket) {
-  struct peer_info *scan;
+  const struct peer_info *scan;
 
   traceEvent(TRACE_INFO, "Updating registrations");
 
@@ -290,8 +377,44 @@ static void update_registrations(int sock_fd, u_char is_udp_socket) {
 
 /* ***************************************************** */
 
-static int find_peer_destination(u_char *mac_address, struct peer_addr *destination) {
-  struct peer_info *scan = known_peers;
+/** Find the peer entry in list with mac_addr equal to mac.
+ *
+ *  Does not modify the list.
+ *
+ *  @return NULL if not found; otherwise pointer to peer entry.
+ */
+struct peer_info * find_peer_by_mac( struct peer_info * list,
+                                     const char * mac )
+{
+    while(list != NULL) 
+    {
+        if( 0 == memcmp(mac, list->mac_addr, 6) ) 
+        {
+            return list;
+        }
+        list = list->next;
+    }
+
+    return NULL;
+}
+
+
+/** Add new to the head of list. If list is NULL; create it.
+ *
+ *  The item new is added to the head of the list. New is modified during
+ *  insertion. list takes ownership of new.
+ */
+void peer_list_add( struct peer_info * * list, 
+                    struct peer_info * new )
+{
+    new->next = *list;
+    new->last_seen = time(NULL);
+    *list = new;
+}
+
+
+static int find_peer_destination(const u_char *mac_address, struct peer_addr *destination) {
+  const struct peer_info *scan = known_peers;
   char mac_buf[32];
   char ip_buf[32];
   int retval=0;
