@@ -22,7 +22,7 @@
 static void read_mac(char *ifname, char *mac_addr) {
   int _sock, res;
   struct ifreq ifr;
-  char mac_addr_buf[32];
+  macstr_t mac_addr_buf;
 
   memset (&ifr,0,sizeof(struct ifreq));
 
@@ -59,7 +59,9 @@ static void read_mac(char *ifname, char *mac_addr) {
 int tuntap_open(tuntap_dev *device, 
                 char *dev, /* user-definable interface name, eg. edge0 */
                 char *device_ip, char *device_mask) {
-  char *tuntap_device = "/dev/net/tun", buf[128];
+  char *tuntap_device = "/dev/net/tun";
+#define N2N_LINUX_SYSTEMCMD_SIZE 128
+  char buf[N2N_LINUX_SYSTEMCMD_SIZE];
   struct ifreq ifr;
   int rc;
 

@@ -23,10 +23,11 @@ void tun_close(tuntap_dev *device);
 
 /* ********************************** */
 
+#define N2N_OSX_TAPDEVICE_SIZE 32
 int tuntap_open(tuntap_dev *device /* ignored */, 
 		char *dev, char *device_ip, char *device_mask) {
   int i;
-  char tap_device[32];
+  char tap_device[N2N_OSX_TAPDEVICE_SIZE];
 
   for (i = 0; i < 255; i++) {
     snprintf(tap_device, sizeof(tap_device), "/dev/tap%d", i);

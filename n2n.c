@@ -45,7 +45,8 @@ TWOFISH *tf;
 
 static void print_header( const char * msg, const struct n2n_packet_header * hdr )
 {
-  char buf[32], buf2[32];
+  ipstr_t buf;
+  ipstr_t buf2;
 
   traceEvent(TRACE_INFO, "%s hdr: public_ip=(%d)%s:%d, private_ip=(%d)%s:%d", msg, 
 	     hdr->public_ip.family,
@@ -368,12 +369,15 @@ void send_packet(int sock, u_char is_udp_socket,
 int traceLevel = 2 /* NORMAL */;
 int useSyslog = 0, syslog_opened = 0;
 
+#define N2N_TRACE_DATESIZE 32
 void traceEvent(int eventTraceLevel, char* file, int line, char * format, ...) {
   va_list va_ap;
 
   if(eventTraceLevel <= traceLevel) {
-    char buf[2048], out_buf[640];
-    char theDate[32], *extra_msg = "";
+    char buf[2048];
+    char out_buf[640];
+    char theDate[N2N_TRACE_DATESIZE];
+    char *extra_msg = "";
     time_t theTime = time(NULL);
 
     va_start (va_ap, format);
@@ -385,7 +389,7 @@ void traceEvent(int eventTraceLevel, char* file, int line, char * format, ...) {
      */
 
     memset(buf, 0, sizeof(buf));
-    strftime(theDate, 32, "%d/%b/%Y %H:%M:%S", localtime(&theTime));
+    strftime(theDate, N2N_TRACE_DATESIZE, "%d/%b/%Y %H:%M:%S", localtime(&theTime));
 
     vsnprintf(buf, sizeof(buf)-1, format, va_ap);
 
@@ -450,7 +454,7 @@ char* intoa(u_int32_t /* host order */ addr, char* buf, u_short buf_len) {
 
 /* *********************************************** */
 
-char* macaddr_str(char *mac, char *buf, int buf_len) {
+char* macaddr_str(const char *mac, char *buf, int buf_len) {
   snprintf(buf, buf_len, "%02X:%02X:%02X:%02X:%02X:%02X",
 	   mac[0] & 0xFF, mac[1] & 0xFF, mac[2] & 0xFF,
 	   mac[3] & 0xFF, mac[4] & 0xFF, mac[5] & 0xFF);
@@ -525,7 +529,11 @@ u_int receive_data(int sock_fd, u_char is_udp_socket,
 		   struct n2n_packet_header *hdr) {
   socklen_t fromlen = sizeof(struct sockaddr_in);
   int len;
-  char *payload, *pkt_type, src_mac_buf[32], dst_mac_buf[32], ip_buf[32], from_ip_buf[32];
+  char *payload, *pkt_type;
+  macstr_t src_mac_buf;
+  macstr_t dst_mac_buf;
+  ipstr_t ip_buf;
+  ipstr_t from_ip_buf;
 
   if(is_udp_socket) {
     struct sockaddr_in _from;
@@ -764,7 +772,7 @@ u_int send_data(int sock_fd, u_char is_udp_socket,
     }
     
     if(rc == -1) {
-      char ip_buf[32];
+      ipstr_t ip_buf;
 
       traceEvent(TRACE_WARNING, "sendto() failed while attempting to send data to %s:%d",
 		 intoa(ntohl(to->addr_type.v4_addr), ip_buf, sizeof(ip_buf)), 
@@ -790,7 +798,8 @@ u_int reliable_sendto(int sock_fd, u_char is_udp_socket,
   char *payload = &packet[N2N_PKT_HDR_SIZE];
   struct n2n_packet_header hdr_storage;
   struct n2n_packet_header *hdr = &hdr_storage;
-  char src_mac_buf[32], dst_mac_buf[32];
+  macstr_t src_mac_buf;
+  macstr_t dst_mac_buf;
 
   /* REVISIT: efficiency of unmarshal + re-marshal just to change a couple of bits. */
   unmarshall_n2n_packet_header( hdr, (u_int8_t *)packet );
@@ -818,7 +827,8 @@ u_int unreliable_sendto(int sock_fd, u_char is_udp_socket,
 			const struct peer_addr *to, u_int8_t compress_data) {
   struct n2n_packet_header hdr_storage;
   struct n2n_packet_header *hdr = &hdr_storage;
-  char src_mac_buf[32], dst_mac_buf[32];
+  macstr_t src_mac_buf;
+  macstr_t dst_mac_buf;
 
   /* REVISIT: efficiency of unmarshal + re-marshal just to change a couple of bits. */
   unmarshall_n2n_packet_header( hdr, (u_int8_t *)packet );

@@ -41,7 +41,8 @@ static void register_peer(struct n2n_packet_header *hdr,
 			  struct peer_addr *sender,
 			  int sock_fd, u_char is_udp_socket) {
   struct peer_info *scan = known_peers;
-  char buf[32], buf1[32], mac_buf[32];
+  ipstr_t buf, buf1;
+  macstr_t mac_buf;
 
   while(scan != NULL) {
     if((strcmp(scan->community_name, hdr->community_name) == 0)
@@ -97,7 +98,7 @@ static void register_peer(struct n2n_packet_header *hdr,
 static void deregister_peer(struct n2n_packet_header *hdr,
 			    struct peer_addr *sender) {
   struct peer_info *scan = known_peers, *prev = NULL;
-  char buf[32], buf1[32];
+  ipstr_t buf, buf1;
 
   while(scan != NULL) {
     if((strcmp(scan->community_name, hdr->community_name) == 0)
@@ -143,7 +144,7 @@ static const struct option long_options[] = {
 static void handle_packet(char *packet, u_int packet_len, 
 			  struct peer_addr *sender,
 			  int sock_fd, u_char is_udp_socket) {
-  char buf[32];
+  ipstr_t buf;
 
   traceEvent(TRACE_INFO, "Received message from node [%s:%d]",
 	     intoa(ntohl(sender->addr_type.v4_addr), buf, sizeof(buf)),
@@ -198,7 +199,7 @@ static void handle_packet(char *packet, u_int packet_len,
 	    traceEvent(TRACE_WARNING, "sendto() [sent=%d][attempted_to_send=%d] [%s]\n",
 		       data_sent_len, len, strerror(errno));
 	  else {
-	    char buf1[32];
+	    ipstr_t buf1;
 
 	    packet_sent = 1, pkt_sent++;
 	    traceEvent(TRACE_INFO, "Sent %smessage to remote node [%s:%d][mac=%s]",

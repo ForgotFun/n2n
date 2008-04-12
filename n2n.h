@@ -151,6 +151,12 @@ int unmarshall_n2n_packet_header( struct n2n_packet_header * hdr, const u_int8_t
 #define N2N_PKT_HDR_SIZE (sizeof(struct n2n_packet_header))
 
 
+/** Common type used to hold stringified IP addresses. */
+typedef char ipstr_t[32];
+
+/** Common type used to hold stringified MAC addresses. */
+typedef char macstr_t[32];
+
 struct peer_info {
   char community_name[16], mac_addr[6];
   struct peer_addr public_ip, private_ip;
@@ -254,7 +260,7 @@ extern void send_packet(int sock, u_char is_udp_socket,
 			const struct peer_addr *remote_peer,
 			u_int8_t compress_data);
 extern char* intoa(u_int32_t addr, char* buf, u_short buf_len);
-extern char* macaddr_str(char *mac, char *buf, int buf_len);
+extern char* macaddr_str(const char *mac, char *buf, int buf_len);
 extern void fill_standard_header_fields(int sock, u_char use_udp_socket,
 					struct n2n_packet_header *hdr,
 					char *src_mac);

@@ -28,21 +28,6 @@ u_int pkt_sent = 0;
 static tuntap_dev device;
 static int edge_sock_fd, allow_routing = 0;
 
-static char gratuitous_arp[] = {
-  0xFF, 0xFF, 0xFF, 0xFF, 0xFF, 0xFF, /* Dest mac */
-  0x00, 0x00, 0x00, 0x00, 0x00, 0x00, /* Src mac */
-  0x08, 0x06, /* ARP */
-  0x00, 0x01, /* Ethernet */
-  0x08, 0x00, /* IP */
-  0x06, /* Hw Size */
-  0x04, /* Protocol Size */
-  0x00, 0x01, /* ARP Request */
-  0x00, 0x00, 0x00, 0x00, 0x00, 0x00, /* Src mac */
-  0x00, 0x00, 0x00, 0x00, /* Src IP */
-  0x00, 0x00, 0x00, 0x00, 0x00, 0x00, /* Target mac */
-  0x00, 0x00, 0x00, 0x00 /* Target IP */
-};
-
 static void send_packet2net(int sock_fd, u_char is_udp_socket,
 			    char *decrypted_msg, size_t len,
 			    u_char allow_routed_packets); /* Forward */
@@ -88,23 +73,6 @@ static struct peer_info *known_peers = NULL;
 static struct peer_info *pending_peers = NULL;
 static time_t last_register = 0;
 
-/* *********************************************** */
-
-static int build_gratuitous_arp(char *buffer, u_short buffer_len) {
-  if(buffer_len < sizeof(gratuitous_arp)) return(-1);
-
-  memcpy(buffer, gratuitous_arp, sizeof(gratuitous_arp));
-  memcpy(&buffer[6], device.mac_addr, 6);
-  memcpy(&buffer[22], device.mac_addr, 6);
-  memcpy(&buffer[28], &device.ip_addr, 4);
-
-  /* REVISIT: BbMaj7 - use a real netmask here. This is valid only by accident
-   * for /24 IPv4 networks. */
-  buffer[31] = 0xFF; /* Use a faked broadcast address */
-  memcpy(&buffer[38], &device.ip_addr, 4);
-  return(sizeof(gratuitous_arp));
-}
-
 
 /* *********************************************** */
 
@@ -114,7 +82,7 @@ static void send_register(int sock, u_char is_udp_socket,
   struct n2n_packet_header hdr;
   char pkt[N2N_PKT_HDR_SIZE];
   size_t len = sizeof(hdr);
-  char ip_buf[32];
+  ipstr_t ip_buf;
 
   fill_standard_header_fields(sock, is_udp_socket, &hdr, (char*)device.mac_addr);
   hdr.sent_by_supernode = 0;
@@ -149,16 +117,22 @@ static void send_deregister(int sock, u_char is_udp_socket,
 
 /* *********************************************** */
 
+static void update_peer_address(int sock_fd, u_char is_udp_socket, 
+                                const struct n2n_packet_header * hdr, 
+                                time_t when);
 void trace_registrations( struct peer_info * scan );
 int is_ip6_discovery( const void * buf, size_t bufsize );
 struct peer_info * find_peer_by_mac( struct peer_info * list,
                                      const char * mac );
 void peer_list_add( struct peer_info * * list, 
                     struct peer_info * new );
+void check_peer( int sock, 
+                 u_char is_udp_socket, 
+                 const struct n2n_packet_header * hdr );
 void try_send_register( int sock, 
                         u_char is_up_socket, 
                         const struct n2n_packet_header * hdr );
-void set_peer_operational( struct peer_info * scan );
+void set_peer_operational( const struct n2n_packet_header * hdr );
 
 
 
@@ -167,12 +141,21 @@ void set_peer_operational( struct peer_info * scan );
  *  If the peer is already in pending_peers, ignore the request.
  *  If not in pending_peers, add it and send a REGISTER.
  *
+ *  If hdr is for a direct peer-to-peer packet, try to register back to sender
+ *  even if the MAC is in pending_peers. This is because an incident direct
+ *  packet indicates that peer-to-peer exchange should work so more aggressive
+ *  registration can be permitted (once per incoming packet) as this should only
+ *  last for a small number of packets..
+ *
  *  Called from the main loop when Rx a packet for our device mac.
  */
 void try_send_register( int sock, 
                         u_char is_udp_socket, 
                         const struct n2n_packet_header * hdr )
 {
+    ipstr_t ip_buf;
+
+    /* REVISIT: purge of pending_peers not yet done. */
     struct peer_info * scan = find_peer_by_mac( pending_peers, hdr->src_mac );
 
     if ( NULL == scan )
@@ -181,15 +164,59 @@ void try_send_register( int sock,
         
         memcpy(scan->mac_addr, hdr->src_mac, 6);
         scan->public_ip = hdr->public_ip;
+        scan->last_seen = time(NULL); /* Don't change this it marks the pending peer for removal. */
 
         peer_list_add( &pending_peers, scan );
+
+        traceEvent( TRACE_NORMAL, "Sending REGISTER request to %s:%d",
+                    intoa(ntohl(scan->public_ip.addr_type.v4_addr), ip_buf, sizeof(ip_buf)),
+                    ntohs(scan->public_ip.port));
 
         send_register(sock, is_udp_socket,
                       &(scan->public_ip), 
                       0 /* is not ACK */ );
-        scan = NULL;
+
+        /* pending_peers now owns scan. */
     }
-    /* else ignore the request. */
+    else
+    {
+        /* scan already in pending_peers. */
+
+        if ( 0 == hdr->sent_by_supernode )
+        {
+            /* over-write supernode-based socket with direct socket. */
+            scan->public_ip = hdr->public_ip;
+
+            traceEvent( TRACE_NORMAL, "Sending additional REGISTER request to %s:%d",
+                        intoa(ntohl(scan->public_ip.addr_type.v4_addr), ip_buf, sizeof(ip_buf)),
+                        ntohs(scan->public_ip.port));
+
+
+            send_register(sock, is_udp_socket,
+                          &(scan->public_ip), 
+                          0 /* is not ACK */ );
+        }
+    }
+}
+
+
+/** Update the last_seen time for this peer, or get registered. */
+void check_peer( int sock, 
+                 u_char is_udp_socket, 
+                 const struct n2n_packet_header * hdr )
+{
+    struct peer_info * scan = find_peer_by_mac( known_peers, hdr->src_mac );
+    
+    if ( NULL == scan )
+    {
+        /* Not in known_peers - start the REGISTER process. */
+        try_send_register( sock, is_udp_socket, hdr );
+    }
+    else
+    {
+        /* Already in known_peers. */
+        update_peer_address( edge_sock_fd, is_udp_sock, hdr, time(NULL) );
+    }
 }
 
 
@@ -199,45 +226,63 @@ void try_send_register( int sock,
  *
  * Called by main loop when Rx a REGISTER_ACK.
  */
-void set_peer_operational( struct peer_info * peer )
+void set_peer_operational( const struct n2n_packet_header * hdr )
 {
     struct peer_info * prev = NULL;
     struct peer_info * scan;
-
-    /* Debugging: this whole check is compiled out for NDEBUG. 
-     * Make sure the peer does not already exist in known_peers */
-    assert( NULL == find_peer_by_mac( known_peers, peer->mac_addr ) );
+    macstr_t mac_buf;
+    ipstr_t ip_buf;
 
     scan=pending_peers;
 
-    while ( scan != peer )
+    while ( NULL != scan )
     {
+        if ( 0 != memcmp( scan->mac_addr, hdr->dst_mac, 6 ) )
+        {
+            break; /* found. */
+        }
+
         prev = scan;
         scan = scan->next;
     }
 
-    /* Remove scan from pending_peers. */
-    if ( prev )
+    if ( scan )
     {
-        prev->next = scan->next;
+
+        /* Remove scan from pending_peers. */
+        if ( prev )
+        {
+            prev->next = scan->next;
+        }
+        else
+        {
+            pending_peers = scan->next;
+        }
+
+        /* Add scan to known_peers. */
+        scan->next = known_peers;
+        known_peers = scan;
+
+        scan->public_ip = hdr->public_ip;
+
+        traceEvent(TRACE_INFO, "=== new peer [mac=%s][socket=%s:%d]",
+                   macaddr_str(scan->mac_addr, mac_buf, sizeof(mac_buf)),
+                   intoa(ntohl(scan->public_ip.addr_type.v4_addr), ip_buf, sizeof(ip_buf)),
+                   ntohs(scan->public_ip.port));
+
+        scan->last_seen = time(NULL);
     }
     else
     {
-        pending_peers = scan->next;
+        traceEvent( TRACE_WARNING, "Failed to find sender in pending_peers." );
     }
-
-    /* Add scan to known_peers. */
-    scan->next = known_peers;
-    known_peers = scan;
-
-    scan->last_seen = time(NULL);
 }
 
 
 void trace_registrations( struct peer_info * scan )
 {
-    char mac_buf[32];
-    char ip_buf[32];
+    macstr_t mac_buf;
+    ipstr_t ip_buf;
 
     while ( scan )
     {
@@ -253,85 +298,124 @@ void trace_registrations( struct peer_info * scan )
 
 u_int8_t broadcast_mac[6] = { 0xff, 0xff, 0xff, 0xff, 0xff, 0xff };
 
-static void update_peer_address(int sock_fd, u_char is_udp_socket, char *mac_address,
-				struct peer_addr *public_ip, time_t when) {
-  struct peer_info *scan = known_peers;
-  u_char found = 0;
-  char mac_buf[32], ip_buf[32], ip_buf2[32];
 
-  if ( 0 == public_ip->addr_type.v4_addr ) {
-      /* Not to be registered. */
-      return;
-  }
+/** Keep the known_peers list straight.
+ *
+ *  Ignore broadcast L2 packets, and packets with invalid public_ip.
+ *  If the dst_mac is in known_peers make sure the entry is correct:
+ *  - if the public_ip socket has changed, erase the entry
+ *  - if the same, update its last_seen = when
+ */
+static void update_peer_address(int sock_fd, u_char is_udp_socket, 
+                                const struct n2n_packet_header * hdr, 
+                                time_t when) 
+{
+    ipstr_t ip_buf;
+    struct peer_info *scan = known_peers;
+    struct peer_info *prev = NULL; /* use to remove bad registrations. */
 
-  if ( 0 == memcmp( mac_address, broadcast_mac, 6 ) )
-  {
-      /* Not to be registered. */
-      return;
-  }
-
-
-  while(scan != NULL) {
-    if(memcmp(mac_address, scan->mac_addr, 6) == 0) {
-      found = 1;
-      break;
-    } else
-      scan = scan->next;
-  }
-
-  if(!found) {
-    /* This peer not found - add it to the list */
-    scan = (struct peer_info*)calloc(1, sizeof(struct peer_info));
-    if(!scan) {
-      traceEvent(TRACE_WARNING, "Not enough memory");
-      return;
+    if ( 0 == hdr->public_ip.addr_type.v4_addr ) 
+    {
+        /* Not to be registered. */
+        return;
     }
 
-    memcpy(scan->mac_addr, mac_address, 6);
-
-    /* Add the new scan to the head of the list. */
-    scan->next = known_peers;
-    known_peers = scan;
-
-    traceEvent(TRACE_INFO, "Registered new peer [mac=%s][ip=%s:%d]",
-	       macaddr_str(mac_address, mac_buf, sizeof(mac_buf)),
-	       intoa(ntohl(public_ip->addr_type.v4_addr), ip_buf, sizeof(ip_buf)),
-	       ntohs(public_ip->port));
-  }
-
-  if ( 0 != memcmp( &(scan->public_ip), public_ip, sizeof(struct peer_addr))) {
-    /* The registration has changed or is new */
-
-    if ( found ) {
-      traceEvent(TRACE_INFO, "Update peer [mac=%s][ip=(%s:%d)->(%s:%d)] - sending REGISTER",
-		 macaddr_str(mac_address, mac_buf, sizeof(mac_buf)),
-		 intoa(ntohl(scan->public_ip.addr_type.v4_addr), ip_buf, sizeof(ip_buf)),
-		 ntohs(scan->public_ip.port),
-		 intoa(ntohl(public_ip->addr_type.v4_addr), ip_buf2, sizeof(ip_buf2)),
-		 ntohs(public_ip->port));
-    } else {
-      traceEvent(TRACE_INFO, "New peer [mac=%s][ip=(%s:%d)] - sending REGISTER",
-		 macaddr_str(mac_address, mac_buf, sizeof(mac_buf)),
-		 intoa(ntohl(public_ip->addr_type.v4_addr), ip_buf2, sizeof(ip_buf2)),
-		 ntohs(public_ip->port));
+    if ( 0 == memcmp( hdr->dst_mac, broadcast_mac, 6 ) )
+    {
+        /* Not to be registered. */
+        return;
     }
 
-    /* Store the new IP address and port */
-    memcpy(&scan->public_ip, public_ip, sizeof(struct peer_addr));
 
-    trace_registrations( known_peers );
+    while(scan != NULL) 
+    {
+        if(memcmp(hdr->dst_mac, scan->mac_addr, 6) == 0) 
+        {
+            break;
+        }
 
-    /* Force REGISTER packet to new IP address and port */
-    send_register(sock_fd, is_udp_socket, public_ip, 0);
-  }
+        prev = scan;
+        scan = scan->next;
+    }
 
-  if(when > 0) 
-    scan->last_seen = when;  /* The peer is now valid */
+    if ( NULL == scan )
+    {
+        /* Not in known_peers. */
+        return;
+    }
+
+    if ( 0 != memcmp( &(scan->public_ip), &(hdr->public_ip), sizeof(struct peer_addr))) 
+    {
+        if ( 0 == hdr->sent_by_supernode )
+        {
+            traceEvent( TRACE_NORMAL, "Peer changed public socket, Was %s:%d",
+                        intoa(ntohl(hdr->public_ip.addr_type.v4_addr), ip_buf, sizeof(ip_buf)),
+                        ntohs(hdr->public_ip.port));
+
+            /* The peer has changed public socket. It can no longer be assumed to be reachable. */
+            /* Remove the peer. */
+            if ( NULL == prev )
+            {
+                /* scan was head of list */
+                known_peers = scan->next;
+            }
+            else
+            {
+                prev->next = scan->next;
+            }
+            free(scan);
+        
+            try_send_register( sock_fd, is_udp_socket, hdr );
+        }
+        else
+        {
+            /* Don't worry about what the supernode reports, it could be seeing a different socket. */
+        }
+    }
+    else
+    {
+        /* Found and unchanged. */
+        scan->last_seen = when;
+    }
 }
 
-/* *********************************************** */
 
-static void check_address_duplication(int sock_fd, u_char is_udp_socket) {
+
+#if defined(DUMMY_ID_00001) /* Disabled waiting for config option to enable it */
+/* *********************************************** */
+static char gratuitous_arp[] = {
+  0xFF, 0xFF, 0xFF, 0xFF, 0xFF, 0xFF, /* Dest mac */
+  0x00, 0x00, 0x00, 0x00, 0x00, 0x00, /* Src mac */
+  0x08, 0x06, /* ARP */
+  0x00, 0x01, /* Ethernet */
+  0x08, 0x00, /* IP */
+  0x06, /* Hw Size */
+  0x04, /* Protocol Size */
+  0x00, 0x01, /* ARP Request */
+  0x00, 0x00, 0x00, 0x00, 0x00, 0x00, /* Src mac */
+  0x00, 0x00, 0x00, 0x00, /* Src IP */
+  0x00, 0x00, 0x00, 0x00, 0x00, 0x00, /* Target mac */
+  0x00, 0x00, 0x00, 0x00 /* Target IP */
+};
+
+static int build_gratuitous_arp(char *buffer, u_short buffer_len) {
+  if(buffer_len < sizeof(gratuitous_arp)) return(-1);
+
+  memcpy(buffer, gratuitous_arp, sizeof(gratuitous_arp));
+  memcpy(&buffer[6], device.mac_addr, 6);
+  memcpy(&buffer[22], device.mac_addr, 6);
+  memcpy(&buffer[28], &device.ip_addr, 4);
+
+  /* REVISIT: BbMaj7 - use a real netmask here. This is valid only by accident
+   * for /24 IPv4 networks. */
+  buffer[31] = 0xFF; /* Use a faked broadcast address */
+  memcpy(&buffer[38], &device.ip_addr, 4);
+  return(sizeof(gratuitous_arp));
+}
+
+/** Called from update_registrations to periodically send gratuitous ARP
+ * broadcasts. */
+static void send_grat_arps(int sock_fd, u_char is_udp_socket) {
   char buffer[48];
   size_t len;
 
@@ -340,6 +424,9 @@ static void check_address_duplication(int sock_fd, u_char is_udp_socket) {
   send_packet2net(sock_fd, is_udp_socket, buffer, len, allow_routing);
   send_packet2net(sock_fd, is_udp_socket, buffer, len, allow_routing); /* Two is better than one :-) */
 }
+#endif /* #if defined(DUMMY_ID_00001) */
+
+
 
 /* *********************************************** */
 
@@ -350,10 +437,6 @@ static void check_address_duplication(int sock_fd, u_char is_udp_socket) {
  *  not modified. Registration packets may be sent.
  */
 static void update_registrations(int sock_fd, u_char is_udp_socket) {
-  const struct peer_info *scan;
-
-  traceEvent(TRACE_INFO, "Updating registrations");
-
   /* REVISIT: BbMaj7: have shorter timeout to REGISTER to supernode if this has
    * not yet succeeded. */
 
@@ -362,19 +445,8 @@ static void update_registrations(int sock_fd, u_char is_udp_socket) {
   traceEvent(TRACE_NORMAL, "Registering with supernode");
   send_register(sock_fd, is_udp_socket, &supernode, 0); /* Register with supernode */
 
-  scan = known_peers;
-
-  while(scan != NULL) {
-    char ip_buf[32];
-
-    traceEvent(TRACE_NORMAL, "Registering with direct peer [%s:%d]",
-	       intoa(ntohl(scan->public_ip.addr_type.v4_addr), ip_buf, sizeof(ip_buf)),
-	       ntohs(scan->public_ip.port));
-    send_register(sock_fd, is_udp_socket, &scan->public_ip, 0); /* Register with peers */
-    scan = scan->next;
-  }
-
-  check_address_duplication(sock_fd, is_udp_sock); /* Send gratuitous ARP */
+  /* REVISIT: turn-on gratuitous ARP with config option. */
+  /* send_grat_arps(sock_fd, is_udp_sock); */
 
   last_register = time(NULL);
 }
@@ -419,8 +491,8 @@ void peer_list_add( struct peer_info * * list,
 
 static int find_peer_destination(const u_char *mac_address, struct peer_addr *destination) {
   const struct peer_info *scan = known_peers;
-  char mac_buf[32];
-  char ip_buf[32];
+  macstr_t mac_buf;
+  ipstr_t ip_buf;
   int retval=0;
 
   traceEvent(TRACE_INFO, "Searching destination peer for MAC %02X:%02X:%02X:%02X:%02X:%02X",
@@ -434,9 +506,8 @@ static int find_peer_destination(const u_char *mac_address, struct peer_addr *de
 	       intoa(ntohl(scan->public_ip.addr_type.v4_addr), ip_buf, sizeof(ip_buf)),
 	       ntohs(scan->public_ip.port));
     
-    if((scan->last_seen > 0)
-       && ((time(NULL)-scan->last_seen) < 60)
-       && (memcmp(mac_address, scan->mac_addr, 6) == 0)) 
+    if((scan->last_seen > 0) &&
+       (memcmp(mac_address, scan->mac_addr, 6) == 0)) 
     {
         memcpy(destination, &scan->public_ip, sizeof(struct sockaddr_in));
         retval=1;
@@ -478,12 +549,13 @@ static const struct option long_options[] = {
 static void send_packet2net(int sock_fd, u_char is_udp_socket,
 			    char *decrypted_msg, size_t len,
 			    u_char allow_routed_packets) {
-  char ip_buf[32];
+  ipstr_t ip_buf;
   char packet[2048];
   int data_sent_len;
   struct n2n_packet_header hdr;
   struct peer_addr destination;
-  char mac_buf[32], mac2_buf[32];
+  macstr_t mac_buf;
+  macstr_t mac2_buf;
   struct ether_header *eh = (struct ether_header*)decrypted_msg;
 
   /* Discard IP packets that are not originated by this hosts */
@@ -655,7 +727,8 @@ static int check_received_packet(tuntap_dev *dev, char *pkt,
       if((the_ip->ip_dst.s_addr != device.ip_addr)
 	 && ((the_ip->ip_dst.s_addr & device.device_mask) != (device.ip_addr & device.device_mask))) /* Not a broadcast */
 	{
-	  char ip_buf[32], ip_buf2[32];
+          ipstr_t ip_buf;
+          ipstr_t ip_buf2;
 
 	  /* This is a packet that needs to be routed */
 	  traceEvent(TRACE_INFO, "Discarding routed packet [rcvd=%s][expected=%s]",
@@ -681,7 +754,9 @@ static int check_received_packet(tuntap_dev *dev, char *pkt,
 int main(int argc, char* argv[]) {
   int opt, local_port = 0 /* any port */;
   char *tuntap_dev_name = "edge0";
-  char *ip_addr = NULL, buf[32];
+  char *ip_addr = NULL;
+  ipstr_t ip_buf;
+  macstr_t mac_buf;
 
 #ifdef WIN32
   tuntap_dev_name = "";
@@ -752,7 +827,7 @@ int main(int argc, char* argv[]) {
     help();
 
   traceEvent(TRACE_NORMAL, "Using supernode %s:%d",
-	     intoa(ntohl(supernode.addr_type.v4_addr), buf, sizeof(buf)),
+	     intoa(ntohl(supernode.addr_type.v4_addr), ip_buf, sizeof(ip_buf)),
 	     ntohs(supernode.port));
   
   if(local_port > 0)
@@ -775,12 +850,11 @@ int main(int argc, char* argv[]) {
   }
 
   update_registrations(edge_sock_fd, is_udp_sock);
-  /* check_address_duplication(edge_sock_fd, is_udp_sock); now done in update_registrations() */
 
   traceEvent(TRACE_NORMAL, "");
   traceEvent(TRACE_NORMAL, "Ready");
 
-  startTunReadThread();
+  startTunReadThread(); /* Reads L2 frames off tap device. */
 
   while(1) {
     int rc, max_sock;
@@ -823,7 +897,6 @@ int main(int argc, char* argv[]) {
 	      traceEvent(TRACE_WARNING, "received packet too short [len=%d]\n", len);
 	    else {
               struct n2n_packet_header *hdr = &hdr_storage;
-	      char ip_buf[32];
 
 	      traceEvent(TRACE_INFO, "Received packet from %s:%d",
 			 intoa(ntohl(sender.addr_type.v4_addr), ip_buf, sizeof(ip_buf)),
@@ -832,7 +905,7 @@ int main(int argc, char* argv[]) {
 	      traceEvent(TRACE_INFO, "Received message [msg_type=%s] from %s [dst mac=%s]",
 			 msg_type2str(hdr->msg_type),
 			 hdr->sent_by_supernode ? "supernode" : "peer",
-			 macaddr_str(hdr->dst_mac, buf, sizeof(buf)));
+			 macaddr_str(hdr->dst_mac, mac_buf, sizeof(mac_buf)));
 
 	      if(hdr->version != N2N_VERSION) {
 		traceEvent(TRACE_WARNING,
@@ -856,9 +929,11 @@ int main(int argc, char* argv[]) {
 		  if(memcmp(hdr->dst_mac, device.mac_addr, 6)
 		     && (!is_multi_broadcast(hdr->dst_mac))) {
 		    traceEvent(TRACE_WARNING, "Received packet with invalid mac address %s: discarded\n",
-			       macaddr_str(hdr->dst_mac, buf, sizeof(buf)));
+			       macaddr_str(hdr->dst_mac, mac_buf, sizeof(mac_buf)));
 		    continue;
 		  }
+
+                  /* assert: the packet received is destined for device.mac_addr or broadcast MAC. */
 
 		  len -= N2N_PKT_HDR_SIZE;
 
@@ -868,7 +943,12 @@ int main(int argc, char* argv[]) {
 
 		  if(len > 0) {
 		    if(check_received_packet(&device, decrypted_msg, len, allow_routing) == 0) {
-                      update_peer_address(edge_sock_fd, is_udp_sock, hdr->src_mac, &hdr->public_ip, 0);
+
+                      if ( 0 == memcmp(hdr->dst_mac, device.mac_addr, 6) )
+                      {
+                          check_peer( edge_sock_fd, is_udp_sock, hdr );
+                      }
+
 		      data_sent_len = tuntap_write(&device, (u_char*)decrypted_msg, len);
 
 		      if(data_sent_len != len)
@@ -882,18 +962,30 @@ int main(int argc, char* argv[]) {
 		      traceEvent(TRACE_WARNING, "Bad destination: message discarded");
 		    }
 		  }
+                  /* else silently ignore empty packet. */
+
 		} else if(hdr->msg_type == MSG_TYPE_REGISTER) {
 		  traceEvent(TRACE_INFO, "Received registration request from remote peer [ip=%s:%d]",
 			     intoa(ntohl(hdr->public_ip.addr_type.v4_addr), ip_buf, sizeof(ip_buf)),
 			     ntohs(hdr->public_ip.port));
-		  update_peer_address(edge_sock_fd, is_udp_sock, hdr->src_mac, &hdr->public_ip, 0);
+                  if ( 0 == memcmp(hdr->dst_mac, device.mac_addr, 6) )
+                  {
+                      check_peer( edge_sock_fd, is_udp_sock, hdr );
+                  }
+
 
 		  send_register(edge_sock_fd, is_udp_sock, &hdr->public_ip, 1); /* Send ACK back */
 		} else if(hdr->msg_type == MSG_TYPE_REGISTER_ACK) {
 		  traceEvent(TRACE_NORMAL, "Received registration ack from remote peer [ip=%s:%d]",
 			     intoa(ntohl(hdr->public_ip.addr_type.v4_addr), ip_buf, sizeof(ip_buf)),
 			     ntohs(hdr->public_ip.port));
-		  update_peer_address(edge_sock_fd, is_udp_sock, hdr->src_mac, &hdr->public_ip, time(NULL));
+
+                  /* if ( 0 == memcmp(hdr->dst_mac, device.mac_addr, 6) ) */
+                  {
+                      /* Move from pending_peers to known_peers; ignore if not in pending. */
+                      set_peer_operational( hdr );
+                  }
+
 		} else {
 		  traceEvent(TRACE_WARNING, "Unable to handle packet type %d: ignored\n", hdr->msg_type);
 		  continue;
@@ -902,10 +994,13 @@ int main(int argc, char* argv[]) {
 	    }
 	  }
 	}
-      }
+      } /* if(FD_ISSET(edge_sock_fd, &socket_mask)) */
     }
 
     update_registrations(edge_sock_fd, is_udp_sock);
+
+    purge_expired_registrations( &known_peers );
+
   } /* while */
 
   send_deregister(edge_sock_fd, is_udp_sock, &supernode);
