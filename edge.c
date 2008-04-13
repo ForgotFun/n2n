@@ -16,6 +16,7 @@
  *
  * Code contributions courtesy of:
  * Richard Andrews <bbmaj7@yahoo.com.au>
+ * Don Bindner <don.bindner@gmail.com>
  *
  */
 
@@ -63,6 +64,9 @@ static void help() {
   printf("-t                       | Use http tunneling\n");
   printf("-r                       | Enable n2n routing\n");
   printf("-v                       | Verbose\n");
+
+  printf("\nEnvironment variables:\n");
+  printf("  N2N_KEY                | Encryption key (ASCII)\n" ); 
 
   exit(0);
 }
@@ -757,6 +761,10 @@ int main(int argc, char* argv[]) {
   char *ip_addr = NULL;
   ipstr_t ip_buf;
   macstr_t mac_buf;
+
+  if( getenv( "N2N_KEY" )) {
+    encrypt_key = strdup( getenv( "N2N_KEY" ));
+  }
 
 #ifdef WIN32
   tuntap_dev_name = "";

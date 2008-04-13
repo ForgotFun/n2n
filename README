@@ -12,7 +12,9 @@ community.
 # tunctl -t tun0
 
 3. enable the edge process
-# ./edge d tun0 -c mynetwork -k encryptme -a 1.2.3.4 -l a.b.c.d:xyw
+# ./edge -d tun0 -c mynetwork -k encryptme -a 1.2.3.4 -l a.b.c.d:xyw
+ or
+# N2N_KEY=encryptme ./edge -d tun0 -c mynetwork -a 1.2.3.4 -l a.b.c.d:xyw
 
 
 Supernode
