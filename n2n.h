@@ -76,6 +76,7 @@
 #include <netinet/udp.h>
 #include <signal.h>
 #include <arpa/inet.h>
+#include <sys/types.h>
 #include <unistd.h>
 #endif
 

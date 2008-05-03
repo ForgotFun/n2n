@@ -1,0 +1,28 @@
+INSTALL
+
+To build the programs:
+
+$ make
+
+To install the programs and man pages:
+
+$ make install
+
+or
+
+$ make PREFIX=/usr/local install
+
+
+RPM Package
+-----------
+
+These steps should work with RPM based Linux distributions since rpmbuild was
+split from the rpm utility (c RedHat 9).
+
+To build an RPM follow these steps.
+
+$ cp -a n2ndir n2n-1.0
+$ tar czf n2n-1.0.tar.gz n2n-1.0
+$ mv n2n-1.0.tar.gz /usr/src/redhat/SOURCES
+$ cp n2ndir/n2n.spec /usr/src/redhat/SPECS
+$ rpmbuild -bb n2n.spec

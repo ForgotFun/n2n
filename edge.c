@@ -46,7 +46,8 @@ static void help() {
 #endif
 	 "-a <tun IP address> "
 	 "-c <community> "
-	 "-k <encrypt key> "
+	 "[-k <encrypt key>] "
+	 "[-u <uid> -g <gid>]"
 	 "\n"
 	 "-l <supernode host:port> "
 	 "[-p <local port>] "
@@ -58,11 +59,13 @@ static void help() {
 
   printf("-a <tun IP address>      | n2n IP address\n");
   printf("-c <community>           | n2n community name\n");
-  printf("-k <encrypt key>         | Encryption key (ASCII)\n");
+  printf("-k <encrypt key>         | Encryption key (ASCII) - also N2N_KEY=<encrypt key>\n");
   printf("-l <supernode host:port> | Supernode IP:port\n");
   printf("-p <local port>          | Local port used for connecting to supernode\n");
-  printf("-t                       | Use http tunneling\n");
-  printf("-r                       | Enable n2n routing\n");
+  printf("-u <UID>                 | User ID (numeric) to use when privileges are dropped\n");
+  printf("-g <GID>                 | Group ID (numeric) to use when privileges are dropped\n");
+  printf("-t                       | Use http tunneling (experimental)\n");
+  printf("-r                       | Enable packet forwarding through n2n community\n");
   printf("-v                       | Verbose\n");
 
   printf("\nEnvironment variables:\n");
@@ -541,6 +544,8 @@ static const struct option long_options[] = {
   { "community",       required_argument, NULL, 'c' },
   { "supernode-list",  required_argument, NULL, 'l' },
   { "tun-device",      required_argument, NULL, 'd' },
+  { "euid",            required_argument, NULL, 'u' },
+  { "egid",            required_argument, NULL, 'g' },
   { "help"   ,         no_argument,       NULL, 'h' },
   { "verbose",         no_argument,       NULL, 'v' },
   { NULL,              0,                 NULL,  0  }
@@ -762,6 +767,9 @@ int main(int argc, char* argv[]) {
   ipstr_t ip_buf;
   macstr_t mac_buf;
 
+  uid_t userid=0; /* root is the only guaranteed ID */
+  gid_t groupid=0; /* root is the only guaranteed ID */
+
   if( getenv( "N2N_KEY" )) {
     encrypt_key = strdup( getenv( "N2N_KEY" ));
   }
@@ -773,7 +781,7 @@ int main(int argc, char* argv[]) {
   supernode.family = AF_INET;
 
   optarg = NULL;
-  while((opt = getopt_long(argc, argv, "k:a:c:d:l:p:vhrt", long_options, NULL)) != EOF) {
+  while((opt = getopt_long(argc, argv, "k:a:c:u:g:d:l:p:vhrt", long_options, NULL)) != EOF) {
     switch (opt) {
     case 'a':
       ip_addr = strdup(optarg);
@@ -783,6 +791,16 @@ int main(int argc, char* argv[]) {
       if(strlen(community_name) > COMMUNITY_LEN)
 	community_name[COMMUNITY_LEN] = '\0';
       break;
+    case 'u': /* uid */
+    {
+        userid=atoi(optarg);
+        break;
+    }
+    case 'g': /* uid */
+    {
+        groupid=atoi(optarg);
+        break;
+    }
     case 'k': /* encrypt key */
       encrypt_key = strdup(optarg);
       break;
@@ -834,6 +852,21 @@ int main(int argc, char* argv[]) {
        encrypt_key))
     help();
 
+  /* If running suid root then we need to setuid before using the force. */
+  setuid( 0 );
+  /* setgid( 0 ); */
+
+  if(tuntap_open(&device, tuntap_dev_name, ip_addr, "255.255.255.0") < 0)
+    return(-1);
+
+  if ( (userid != 0) || (groupid != 0 ) ) {
+    traceEvent(TRACE_NORMAL, "Interface up. Dropping privileges to uid=%d, gid=%d", userid, groupid);
+
+    /* Finished with the need for root privileges. Drop to unprivileged user. */
+    setreuid( userid, userid );
+    setregid( groupid, groupid );
+  }
+
   traceEvent(TRACE_NORMAL, "Using supernode %s:%d",
 	     intoa(ntohl(supernode.addr_type.v4_addr), ip_buf, sizeof(ip_buf)),
 	     ntohs(supernode.port));
@@ -842,9 +875,6 @@ int main(int argc, char* argv[]) {
     traceEvent(TRACE_NORMAL, "Binding to local port %d", local_port);
   
   if(init_n2n( (u_int8_t *)encrypt_key, strlen(encrypt_key) ) < 0) return(-1);
-  if(tuntap_open(&device, tuntap_dev_name, ip_addr, "255.255.255.0") < 0)
-    return(-1);
-
   edge_sock_fd = open_socket(local_port, is_udp_sock, 0);
   if(edge_sock_fd < 0) return(-1);
 

@@ -3,7 +3,7 @@
 Edge node
 ---------
 
-You need to start ad egde node on each PC you want to connect with the *same*
+You need to start an egde node on each host you want to connect with the *same*
 community.
 
 0. become root
@@ -12,9 +12,9 @@ community.
 # tunctl -t tun0
 
 3. enable the edge process
-# ./edge -d tun0 -c mynetwork -k encryptme -a 1.2.3.4 -l a.b.c.d:xyw
+# ./edge -d n2n0 -c mynetwork -k encryptme -u 99 -g 99 -a 1.2.3.4 -l a.b.c.d:xyw
  or
-# N2N_KEY=encryptme ./edge -d tun0 -c mynetwork -a 1.2.3.4 -l a.b.c.d:xyw
+# N2N_KEY=encryptme ./edge -d n2n0 -c mynetwork -u 99 -g 99 -a 1.2.3.4 -l a.b.c.d:xyw
 
 
 Supernode
@@ -25,5 +25,25 @@ You need to start the supernode once
 1. ./supernode -l 1234 -v
 
 
-(C) 2007 - Luca Deri <deri@ntop.org>
+Dropping Root Privileges and SUID-Root Executables
+--------------------------------------------------
 
+The edge node uses superuser privileges to create a TAP network interface
+device. Once this is created root privileges are not required and can constitute
+a security hazard if there is some way for an attacker to take control of an
+edge process while it is running. Edge will drop to a non-privileged user if you
+specify the -u <uid> and -g <gid> options. These are numeric IDs. Consult
+/etc/passwd.
+
+You may choose to install edge SUID-root to do this:
+
+1. Become root
+2. chown root:root edge
+3. chmod +s edge
+done
+
+Any user can now run edge. You may not want this, but it may be convenient and
+safe if your host has only one login user.
+
+
+(C) 2007,2008 - Luca Deri <deri@ntop.org>
