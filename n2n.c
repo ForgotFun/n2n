@@ -804,7 +804,8 @@ u_int reliable_sendto(int sock_fd, u_char is_udp_socket,
   /* REVISIT: efficiency of unmarshal + re-marshal just to change a couple of bits. */
   unmarshall_n2n_packet_header( hdr, (u_int8_t *)packet );
 
-  hdr->sequence_id = (hdr->msg_type == MSG_TYPE_PACKET) ? mac2sequence((u_char*)payload, packet, *packet_len) : 0;
+  /* hdr->sequence_id = (hdr->msg_type == MSG_TYPE_PACKET) ? mac2sequence((u_char*)payload, packet, *packet_len) : 0; */
+  hdr->sequence_id = 0;
   hdr->pkt_type    = packet_reliable_data;
 
   traceEvent(TRACE_INFO, "Sent reliable packet [msg_type=%s][seq_id=%d][src_mac=%s][dst_mac=%s]",
@@ -883,19 +884,21 @@ void print_n2n_version() {
          version, osName, buildDate);
 }
 
-void purge_expired_registrations( struct peer_info ** peer_list ) {
+size_t purge_expired_registrations( struct peer_info ** peer_list ) {
   static time_t last_purge = 0;
   time_t now = time(NULL);
-  u_int num_reg = 0;
+  size_t num_reg = 0;
 
-  if((now - last_purge) < PURGE_REGISTRATION_FREQUENCY) return;
+  if((now - last_purge) < PURGE_REGISTRATION_FREQUENCY) return 0;
 
   traceEvent(TRACE_INFO, "Purging old registrations");
 
   num_reg = purge_peer_list( peer_list, now-REGISTRATION_TIMEOUT );
 
   last_purge = now;
-  traceEvent(TRACE_INFO, "Remove %d registrations", num_reg);
+  traceEvent(TRACE_INFO, "Remove %ld registrations", num_reg);
+
+  return num_reg;
 }
 
 /** Purge old items from the peer_list and return the number of items that were removed. */

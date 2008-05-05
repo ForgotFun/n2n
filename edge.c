@@ -23,6 +23,9 @@
 #include "n2n.h"
 #include <assert.h>
 
+/** Time between logging system STATUS messages */
+#define STATUS_UPDATE_INTERVAL (30 * 60) /*secs*/
+
 static struct peer_addr supernode;
 static char *community_name = NULL, is_udp_sock = 1;
 u_int pkt_sent = 0;
@@ -133,6 +136,7 @@ struct peer_info * find_peer_by_mac( struct peer_info * list,
                                      const char * mac );
 void peer_list_add( struct peer_info * * list, 
                     struct peer_info * new );
+size_t peer_list_size( const struct peer_info * list );
 void check_peer( int sock, 
                  u_char is_udp_socket, 
                  const struct n2n_packet_header * hdr );
@@ -174,6 +178,9 @@ void try_send_register( int sock,
         scan->last_seen = time(NULL); /* Don't change this it marks the pending peer for removal. */
 
         peer_list_add( &pending_peers, scan );
+
+        traceEvent( TRACE_NORMAL, "Pending peers list size=%ld",
+                    peer_list_size( pending_peers ) );
 
         traceEvent( TRACE_NORMAL, "Sending REGISTER request to %s:%d",
                     intoa(ntohl(scan->public_ip.addr_type.v4_addr), ip_buf, sizeof(ip_buf)),
@@ -276,6 +283,13 @@ void set_peer_operational( const struct n2n_packet_header * hdr )
                    macaddr_str(scan->mac_addr, mac_buf, sizeof(mac_buf)),
                    intoa(ntohl(scan->public_ip.addr_type.v4_addr), ip_buf, sizeof(ip_buf)),
                    ntohs(scan->public_ip.port));
+
+        traceEvent( TRACE_NORMAL, "Pending peers list size=%ld",
+                    peer_list_size( pending_peers ) );
+
+        traceEvent( TRACE_NORMAL, "Operational peers list size=%ld",
+                    peer_list_size( known_peers ) );
+
 
         scan->last_seen = time(NULL);
     }
@@ -481,6 +495,22 @@ struct peer_info * find_peer_by_mac( struct peer_info * list,
     return NULL;
 }
 
+
+/** Return the number of elements in the list.
+ *
+ */
+size_t peer_list_size( const struct peer_info * list )
+{
+    size_t retval=0;
+
+    while ( list )
+    {
+        ++retval;
+        list = list->next;
+    }
+
+    return retval;
+}
 
 /** Add new to the head of list. If list is NULL; create it.
  *
@@ -770,6 +800,9 @@ int main(int argc, char* argv[]) {
   uid_t userid=0; /* root is the only guaranteed ID */
   gid_t groupid=0; /* root is the only guaranteed ID */
 
+  size_t numPurged;
+  time_t lastStatus=0;
+
   if( getenv( "N2N_KEY" )) {
     encrypt_key = strdup( getenv( "N2N_KEY" ));
   }
@@ -898,6 +931,7 @@ int main(int argc, char* argv[]) {
     int rc, max_sock;
     fd_set socket_mask;
     struct timeval wait_time;
+    time_t nowTime;
 
     FD_ZERO(&socket_mask);
     FD_SET(edge_sock_fd, &socket_mask);
@@ -906,6 +940,7 @@ int main(int argc, char* argv[]) {
     wait_time.tv_sec = SOCKET_TIMEOUT_INTERVAL_SECS; wait_time.tv_usec = 0;
 
     rc = select(max_sock+1, &socket_mask, NULL, NULL, &wait_time);
+    nowTime=time(NULL);
 
     if(rc > 0) {
       char packet[2048], decrypted_msg[2048];
@@ -1037,8 +1072,21 @@ int main(int argc, char* argv[]) {
 
     update_registrations(edge_sock_fd, is_udp_sock);
 
-    purge_expired_registrations( &known_peers );
+    numPurged =  purge_expired_registrations( &known_peers );
+    numPurged += purge_expired_registrations( &pending_peers );
+    if ( numPurged > 0 )
+    {
+        traceEvent( TRACE_NORMAL, "Peer removed: pending=%ld, operational=%ld",
+                    peer_list_size( pending_peers ), peer_list_size( known_peers ) );
+    }
 
+    if ( ( nowTime - lastStatus ) > STATUS_UPDATE_INTERVAL )
+    {
+        lastStatus = nowTime;
+        
+        traceEvent( TRACE_NORMAL, "STATUS: pending=%ld, operational=%ld",
+                    peer_list_size( pending_peers ), peer_list_size( known_peers ) );
+    }
   } /* while */
 
   send_deregister(edge_sock_fd, is_udp_sock, &supernode);

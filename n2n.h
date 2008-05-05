@@ -288,7 +288,7 @@ void print_n2n_version();
 size_t purge_peer_list( struct peer_info ** peer_list, 
                         time_t purge_before );
 
-void purge_expired_registrations( struct peer_info ** peer_list );
+size_t purge_expired_registrations( struct peer_info ** peer_list );
 
 /* version.c */
 extern char *version, *osName, *buildDate;
