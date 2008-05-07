@@ -40,6 +40,8 @@ char *encrypt_key = NULL;
 
 /* *********************************************** */
 
+static void readFromIPSocket();
+
 static void help() {
   print_n2n_version();
 
@@ -672,63 +674,6 @@ int is_ip6_discovery( const void * buf, size_t bufsize )
     return retval;
 }
 
-static
-#ifdef WIN32
-DWORD tunReadThread(LPVOID lpArg )
-#else
-  void* tunReadThread(void *lpArg)
-#endif
-{
-  while(1) {
-    /* tun -> remote */
-    u_char decrypted_msg[2048];
-    size_t len;
-
-    len = tuntap_read(&device, decrypted_msg, sizeof(decrypted_msg));
-
-    if((len <= 0) || (len > sizeof(decrypted_msg)))
-      traceEvent(TRACE_WARNING, "read()=%d [%d/%s]\n",
-		 len, errno, strerror(errno));
-    else {
-      traceEvent(TRACE_INFO, "### Rx L2 Msg (%d) tun -> network", len);
-
-      if ( is_ip6_discovery( decrypted_msg, len ) ) {
-        traceEvent(TRACE_WARNING, "Dropping unsupported IPv6 neighbour discovery packet");
-      } else {
-        send_packet2net(edge_sock_fd, is_udp_sock, (char*)decrypted_msg,
-                        len, allow_routing);
-      }
-    }
-  }
-
-  return(
-#ifdef WIN32
-	 (DWORD)
-#endif
-	 NULL);
-}
-
-/* ***************************************************** */
-
-static void startTunReadThread() {
-#ifdef WIN32
-  HANDLE hThread;
-  DWORD dwThreadId;
-
-  hThread = CreateThread(NULL, /* no security attributes */
-			 0,            /* use default stack size */
-			 (LPTHREAD_START_ROUTINE)tunReadThread, /* thread function */
-			 NULL,     /* argument to thread function */
-			 0,            /* use default creation flags */
-			 &dwThreadId); /* returns the thread identifier */
-#else
-  int rc;
-  pthread_t threadId;
-
-  rc = pthread_create(&threadId, NULL, tunReadThread, NULL);
-
-#endif
-}
 
 /* ***************************************************** */
 
@@ -790,12 +735,174 @@ static int check_received_packet(tuntap_dev *dev, char *pkt,
 
 /* ***************************************************** */
 
+/** Read a single packet from the TAP interface, process it and write out the
+ *  corresponding packet to the cooked socket. 
+ *
+ *  REVISIT: fails if more than one packet is waiting to be read.
+ */
+static void readFromTAPSocket()
+{
+    /* tun -> remote */
+    u_char decrypted_msg[2048];
+    size_t len;
+
+    len = tuntap_read(&device, decrypted_msg, sizeof(decrypted_msg));
+
+    if((len <= 0) || (len > sizeof(decrypted_msg)))
+        traceEvent(TRACE_WARNING, "read()=%d [%d/%s]\n",
+                   len, errno, strerror(errno));
+    else {
+        traceEvent(TRACE_INFO, "### Rx L2 Msg (%d) tun -> network", len);
+
+        if ( is_ip6_discovery( decrypted_msg, len ) ) {
+            traceEvent(TRACE_WARNING, "Dropping unsupported IPv6 neighbour discovery packet");
+        } else {
+            send_packet2net(edge_sock_fd, is_udp_sock, (char*)decrypted_msg,
+                            len, allow_routing);
+        }
+    }
+}
+
+/* ***************************************************** */
+
+
+void readFromIPSocket()
+{
+    ipstr_t ip_buf;
+    macstr_t mac_buf;
+    char packet[2048], decrypted_msg[2048];
+    size_t len;
+    int data_sent_len;
+    struct peer_addr sender;
+
+    /* remote -> tun */
+    u_int8_t discarded_pkt;
+    struct n2n_packet_header hdr_storage;
+
+    len = receive_data(edge_sock_fd, is_udp_sock, packet, sizeof(packet), &sender,
+                       &discarded_pkt, (char*)device.mac_addr, 1, &hdr_storage);
+
+    if(len <= 0) return;
+
+    traceEvent(TRACE_INFO, "### Rx N2N Msg network -> tun");
+
+    if(discarded_pkt) {
+        traceEvent(TRACE_INFO, "Discarded incoming pkt");
+    } else {
+        if(len <= 0)
+            traceEvent(TRACE_WARNING, "receive_data()=%d [%s]\n", len, strerror(errno));
+        else {
+            if(len < N2N_PKT_HDR_SIZE)
+                traceEvent(TRACE_WARNING, "received packet too short [len=%d]\n", len);
+            else {
+                struct n2n_packet_header *hdr = &hdr_storage;
+
+                traceEvent(TRACE_INFO, "Received packet from %s:%d",
+                           intoa(ntohl(sender.addr_type.v4_addr), ip_buf, sizeof(ip_buf)),
+                           ntohs(sender.port));
+
+                traceEvent(TRACE_INFO, "Received message [msg_type=%s] from %s [dst mac=%s]",
+                           msg_type2str(hdr->msg_type),
+                           hdr->sent_by_supernode ? "supernode" : "peer",
+                           macaddr_str(hdr->dst_mac, mac_buf, sizeof(mac_buf)));
+
+                if(hdr->version != N2N_VERSION) {
+                    traceEvent(TRACE_WARNING,
+                               "Received packet with unknown protocol version (%d): discarded\n",
+                               hdr->version);
+                    return;
+                }
+
+                /* FIX - Add IPv6 support */
+                if(hdr->public_ip.addr_type.v4_addr == 0) {
+                    hdr->public_ip.addr_type.v4_addr = sender.addr_type.v4_addr;
+                    hdr->public_ip.port = sender.port;
+                    hdr->public_ip.family = AF_INET;
+                }
+
+                if(strncmp(hdr->community_name, community_name, COMMUNITY_LEN) != 0) {
+                    traceEvent(TRACE_WARNING, "Received packet with invalid community [expected=%s][received=%s]\n",
+                               community_name, hdr->community_name);
+                } else {
+                    if(hdr->msg_type == MSG_TYPE_PACKET) {
+                        if(memcmp(hdr->dst_mac, device.mac_addr, 6)
+                           && (!is_multi_broadcast(hdr->dst_mac))) {
+                            traceEvent(TRACE_WARNING, "Received packet with invalid mac address %s: discarded\n",
+                                       macaddr_str(hdr->dst_mac, mac_buf, sizeof(mac_buf)));
+                            return;
+                        }
+
+                        /* assert: the packet received is destined for device.mac_addr or broadcast MAC. */
+
+                        len -= N2N_PKT_HDR_SIZE;
+
+                        /* Decrypt message first */
+                        len = TwoFishDecryptRaw((u_int8_t *)&packet[N2N_PKT_HDR_SIZE],
+                                                (u_int8_t *)decrypted_msg, len, tf);
+
+                        if(len > 0) {
+                            if(check_received_packet(&device, decrypted_msg, len, allow_routing) == 0) {
+
+                                if ( 0 == memcmp(hdr->dst_mac, device.mac_addr, 6) )
+                                {
+                                    check_peer( edge_sock_fd, is_udp_sock, hdr );
+                                }
+
+                                data_sent_len = tuntap_write(&device, (u_char*)decrypted_msg, len);
+
+                                if(data_sent_len != len)
+                                    traceEvent(TRACE_WARNING, "tuntap_write() [sent=%d][attempted_to_send=%d] [%s]\n",
+                                               data_sent_len, len, strerror(errno));
+                                else {
+                                    /* Normal situation. */
+                                    traceEvent(TRACE_INFO, "### Tx L2 Msg -> tun");
+                                }
+                            } else {
+                                traceEvent(TRACE_WARNING, "Bad destination: message discarded");
+                            }
+                        }
+                        /* else silently ignore empty packet. */
+
+                    } else if(hdr->msg_type == MSG_TYPE_REGISTER) {
+                        traceEvent(TRACE_INFO, "Received registration request from remote peer [ip=%s:%d]",
+                                   intoa(ntohl(hdr->public_ip.addr_type.v4_addr), ip_buf, sizeof(ip_buf)),
+                                   ntohs(hdr->public_ip.port));
+                        if ( 0 == memcmp(hdr->dst_mac, device.mac_addr, 6) )
+                        {
+                            check_peer( edge_sock_fd, is_udp_sock, hdr );
+                        }
+
+
+                        send_register(edge_sock_fd, is_udp_sock, &hdr->public_ip, 1); /* Send ACK back */
+                    } else if(hdr->msg_type == MSG_TYPE_REGISTER_ACK) {
+                        traceEvent(TRACE_NORMAL, "Received registration ack from remote peer [ip=%s:%d]",
+                                   intoa(ntohl(hdr->public_ip.addr_type.v4_addr), ip_buf, sizeof(ip_buf)),
+                                   ntohs(hdr->public_ip.port));
+
+                        /* if ( 0 == memcmp(hdr->dst_mac, device.mac_addr, 6) ) */
+                        {
+                            /* Move from pending_peers to known_peers; ignore if not in pending. */
+                            set_peer_operational( hdr );
+                        }
+
+                    } else {
+                        traceEvent(TRACE_WARNING, "Unable to handle packet type %d: ignored\n", hdr->msg_type);
+                        return;
+                    }
+                }
+            }
+        }
+    }
+}
+
+
+/* ***************************************************** */
+
 int main(int argc, char* argv[]) {
   int opt, local_port = 0 /* any port */;
   char *tuntap_dev_name = "edge0";
   char *ip_addr = NULL;
   ipstr_t ip_buf;
-  macstr_t mac_buf;
 
   uid_t userid=0; /* root is the only guaranteed ID */
   gid_t groupid=0; /* root is the only guaranteed ID */
@@ -925,7 +1032,13 @@ int main(int argc, char* argv[]) {
   traceEvent(TRACE_NORMAL, "");
   traceEvent(TRACE_NORMAL, "Ready");
 
-  startTunReadThread(); /* Reads L2 frames off tap device. */
+
+  /* Main loop
+   *
+   * select() is used to wait for input on either the TAP fd or the UDP/TCP
+   * socket. When input is present the data is read and processed by either
+   * readFromIPSocket() or readFromTAPSocket()
+   */
 
   while(1) {
     int rc, max_sock;
@@ -935,139 +1048,31 @@ int main(int argc, char* argv[]) {
 
     FD_ZERO(&socket_mask);
     FD_SET(edge_sock_fd, &socket_mask);
-    max_sock = edge_sock_fd;
+    FD_SET(device.fd, &socket_mask);
+    max_sock = MAX( edge_sock_fd, device.fd );
 
     wait_time.tv_sec = SOCKET_TIMEOUT_INTERVAL_SECS; wait_time.tv_usec = 0;
 
     rc = select(max_sock+1, &socket_mask, NULL, NULL, &wait_time);
     nowTime=time(NULL);
 
-    if(rc > 0) {
-      char packet[2048], decrypted_msg[2048];
-      size_t len;
-      int data_sent_len;
-      struct peer_addr sender;
+    if(rc > 0) 
+    {
+        /* Any or all of the FDs could have input; check them all. */
 
-      if(FD_ISSET(edge_sock_fd, &socket_mask)) {
-	/* remote -> tun */
-	u_int8_t discarded_pkt;
-	struct n2n_packet_header hdr_storage;
+        if(FD_ISSET(edge_sock_fd, &socket_mask)) 
+        {
+            /* Read a cooked socket from the internet socket. Writes on the TAP
+             * socket. */
+            readFromIPSocket();
+        }
 
-	len = receive_data(edge_sock_fd, is_udp_sock, packet, sizeof(packet), &sender,
-			   &discarded_pkt, (char*)device.mac_addr, 1, &hdr_storage);
-
-	if(len <= 0) continue;
-
-	traceEvent(TRACE_INFO, "### Rx N2N Msg network -> tun");
-
-	if(discarded_pkt) {
-	  traceEvent(TRACE_INFO, "Discarded incoming pkt");
-	} else {
-	  if(len <= 0)
-	    traceEvent(TRACE_WARNING, "receive_data()=%d [%s]\n", len, strerror(errno));
-	  else {
-	    if(len < N2N_PKT_HDR_SIZE)
-	      traceEvent(TRACE_WARNING, "received packet too short [len=%d]\n", len);
-	    else {
-              struct n2n_packet_header *hdr = &hdr_storage;
-
-	      traceEvent(TRACE_INFO, "Received packet from %s:%d",
-			 intoa(ntohl(sender.addr_type.v4_addr), ip_buf, sizeof(ip_buf)),
-			 ntohs(sender.port));
-
-	      traceEvent(TRACE_INFO, "Received message [msg_type=%s] from %s [dst mac=%s]",
-			 msg_type2str(hdr->msg_type),
-			 hdr->sent_by_supernode ? "supernode" : "peer",
-			 macaddr_str(hdr->dst_mac, mac_buf, sizeof(mac_buf)));
-
-	      if(hdr->version != N2N_VERSION) {
-		traceEvent(TRACE_WARNING,
-			   "Received packet with unknown protocol version (%d): discarded\n",
-			   hdr->version);
-		continue;
-	      }
-
-	      /* FIX - Add IPv6 support */
-	      if(hdr->public_ip.addr_type.v4_addr == 0) {
-		hdr->public_ip.addr_type.v4_addr = sender.addr_type.v4_addr;
-		hdr->public_ip.port = sender.port;
-		hdr->public_ip.family = AF_INET;
-	      }
-
-	      if(strncmp(hdr->community_name, community_name, COMMUNITY_LEN) != 0) {
-		traceEvent(TRACE_WARNING, "Received packet with invalid community [expected=%s][received=%s]\n",
-			   community_name, hdr->community_name);
-	      } else {
-		if(hdr->msg_type == MSG_TYPE_PACKET) {
-		  if(memcmp(hdr->dst_mac, device.mac_addr, 6)
-		     && (!is_multi_broadcast(hdr->dst_mac))) {
-		    traceEvent(TRACE_WARNING, "Received packet with invalid mac address %s: discarded\n",
-			       macaddr_str(hdr->dst_mac, mac_buf, sizeof(mac_buf)));
-		    continue;
-		  }
-
-                  /* assert: the packet received is destined for device.mac_addr or broadcast MAC. */
-
-		  len -= N2N_PKT_HDR_SIZE;
-
-		  /* Decrypt message first */
-		  len = TwoFishDecryptRaw((u_int8_t *)&packet[N2N_PKT_HDR_SIZE],
-                                          (u_int8_t *)decrypted_msg, len, tf);
-
-		  if(len > 0) {
-		    if(check_received_packet(&device, decrypted_msg, len, allow_routing) == 0) {
-
-                      if ( 0 == memcmp(hdr->dst_mac, device.mac_addr, 6) )
-                      {
-                          check_peer( edge_sock_fd, is_udp_sock, hdr );
-                      }
-
-		      data_sent_len = tuntap_write(&device, (u_char*)decrypted_msg, len);
-
-		      if(data_sent_len != len)
-			traceEvent(TRACE_WARNING, "tuntap_write() [sent=%d][attempted_to_send=%d] [%s]\n",
-				   data_sent_len, len, strerror(errno));
-                      else {
-                        /* Normal situation. */
-                        traceEvent(TRACE_INFO, "### Tx L2 Msg -> tun");
-                      }
-		    } else {
-		      traceEvent(TRACE_WARNING, "Bad destination: message discarded");
-		    }
-		  }
-                  /* else silently ignore empty packet. */
-
-		} else if(hdr->msg_type == MSG_TYPE_REGISTER) {
-		  traceEvent(TRACE_INFO, "Received registration request from remote peer [ip=%s:%d]",
-			     intoa(ntohl(hdr->public_ip.addr_type.v4_addr), ip_buf, sizeof(ip_buf)),
-			     ntohs(hdr->public_ip.port));
-                  if ( 0 == memcmp(hdr->dst_mac, device.mac_addr, 6) )
-                  {
-                      check_peer( edge_sock_fd, is_udp_sock, hdr );
-                  }
-
-
-		  send_register(edge_sock_fd, is_udp_sock, &hdr->public_ip, 1); /* Send ACK back */
-		} else if(hdr->msg_type == MSG_TYPE_REGISTER_ACK) {
-		  traceEvent(TRACE_NORMAL, "Received registration ack from remote peer [ip=%s:%d]",
-			     intoa(ntohl(hdr->public_ip.addr_type.v4_addr), ip_buf, sizeof(ip_buf)),
-			     ntohs(hdr->public_ip.port));
-
-                  /* if ( 0 == memcmp(hdr->dst_mac, device.mac_addr, 6) ) */
-                  {
-                      /* Move from pending_peers to known_peers; ignore if not in pending. */
-                      set_peer_operational( hdr );
-                  }
-
-		} else {
-		  traceEvent(TRACE_WARNING, "Unable to handle packet type %d: ignored\n", hdr->msg_type);
-		  continue;
-		}
-	      }
-	    }
-	  }
-	}
-      } /* if(FD_ISSET(edge_sock_fd, &socket_mask)) */
+        if(FD_ISSET(device.fd, &socket_mask)) 
+        {
+            /* Read an ethernet frame from the TAP socket. Write on the IP
+             * socket. */
+            readFromTAPSocket();
+        }
     }
 
     update_registrations(edge_sock_fd, is_udp_sock);
@@ -1096,4 +1101,5 @@ int main(int argc, char* argv[]) {
 
   return(0);
 }
+
 

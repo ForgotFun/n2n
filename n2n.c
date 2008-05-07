@@ -795,7 +795,7 @@ u_int send_data(int sock_fd, u_char is_udp_socket,
 u_int reliable_sendto(int sock_fd, u_char is_udp_socket,
 		      char *packet, size_t *packet_len, 
 		      const struct peer_addr *to, u_int8_t compress_data) {
-  char *payload = &packet[N2N_PKT_HDR_SIZE];
+/*   char *payload = &packet[N2N_PKT_HDR_SIZE]; */
   struct n2n_packet_header hdr_storage;
   struct n2n_packet_header *hdr = &hdr_storage;
   macstr_t src_mac_buf;
