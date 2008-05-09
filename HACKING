@@ -183,6 +183,14 @@ identify its MAC and IP address. Gratuitous ARP packets are to keep ARP caches
 up to date so contacting the host will be faster after an long idle time.
 
 
+MAN PAGES
+---------
+
+Look at a non-installed man page like this (linux):
+
+nroff -man edge.8 | less
+
+
 -------
 
 April 2008 - Richard Andrews <bbmaj7@yahoo.com.au>

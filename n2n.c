@@ -940,4 +940,34 @@ size_t purge_peer_list( struct peer_info ** peer_list,
     return retval;
 }
 
+static u_int8_t hex2byte( const char * s )
+{
+    char tmp[3];
+    tmp[0]=s[0];
+    tmp[1]=s[1];
+    tmp[2]=0; /* NULL term */
 
+    return strtol( s, NULL, 16 );
+}
+
+extern int str2mac( u_int8_t * outmac /* 6 bytes */, const char * s )
+{
+    size_t i;
+
+    /* break it down as one case for the first "HH", the 5 x through loop for
+     * each ":HH" where HH is a two hex nibbles in ASCII. */
+
+    *outmac=hex2byte(s);
+    ++outmac;
+    s+=2; /* don't skip colon yet - helps generalise loop. */
+
+    for (i=1; i<6; ++i )
+    {
+        s+=1;
+        *outmac=hex2byte(s);
+        ++outmac;
+        s+=2;
+    }
+
+    return 0; /* ok */
+}

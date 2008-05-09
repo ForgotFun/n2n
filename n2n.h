@@ -98,14 +98,14 @@
 
 #ifndef WIN32
 typedef struct tuntap_dev {
-  int fd;
-  u_char mac_addr[6];
-  u_int32_t ip_addr, device_mask;
-  u_int mtu;
+  int           fd;
+  u_int8_t      mac_addr[6];
+  u_int32_t     ip_addr, device_mask;
+  u_int         mtu;
 } tuntap_dev;
 
 #define SOCKET int
-#endif
+#endif /* #ifndef WIN32 */
 
 #define QUICKLZ               1
 #define N2N_VERSION           1
@@ -248,7 +248,7 @@ extern void send_ack(int sock_fd, u_char is_udp_socket,
 		     char *src_mac);
 
 extern void traceEvent(int eventTraceLevel, char* file, int line, char * format, ...);
-extern int  tuntap_open(tuntap_dev *device, char *dev, char *device_ip, char *device_mask);
+extern int  tuntap_open(tuntap_dev *device, char *dev, char *device_ip, char *device_mask, const char * device_mac );
 extern int  tuntap_read(struct tuntap_dev *tuntap, unsigned char *buf, int len);
 extern int  tuntap_write(struct tuntap_dev *tuntap, unsigned char *buf, int len);
 extern void tuntap_close(struct tuntap_dev *tuntap);
@@ -262,6 +262,7 @@ extern void send_packet(int sock, u_char is_udp_socket,
 			u_int8_t compress_data);
 extern char* intoa(u_int32_t addr, char* buf, u_short buf_len);
 extern char* macaddr_str(const char *mac, char *buf, int buf_len);
+extern int   str2mac( u_int8_t * outmac /* 6 bytes */, const char * s );
 extern void fill_standard_header_fields(int sock, u_char use_udp_socket,
 					struct n2n_packet_header *hdr,
 					char *src_mac);

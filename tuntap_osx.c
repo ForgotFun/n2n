@@ -25,7 +25,10 @@ void tun_close(tuntap_dev *device);
 
 #define N2N_OSX_TAPDEVICE_SIZE 32
 int tuntap_open(tuntap_dev *device /* ignored */, 
-		char *dev, char *device_ip, char *device_mask) {
+                char *dev, 
+                char *device_ip, 
+                char *device_mask,
+                const char * device_mac ) {
   int i;
   char tap_device[N2N_OSX_TAPDEVICE_SIZE];
 
@@ -48,12 +51,22 @@ int tuntap_open(tuntap_dev *device /* ignored */,
 
     device->ip_addr = inet_addr(device_ip);
 
+    if ( device_mac )
+    {
+        /* FIXME - This is not tested. Might be wrong syntax for OS X */
+
+        /* Set the hw address before bringing the if up. */
+        snprintf(buf, sizeof(buf), "ifconfig tap%d hw ether %s",
+                 i, device_mac);
+        system(buf);
+    }
+
     snprintf(buf, sizeof(buf), "ifconfig tap%d %s netmask %s mtu 1400 up",
-	     i, device_ip, device_mask);
+             i, device_ip, device_mask);
     system(buf);
 
     traceEvent(TRACE_NORMAL, "Interface tap%d up and running (%s/%s)",
-	       i, device_ip, device_mask);
+               i, device_ip, device_mask);
 
   /* Read MAC address */
 

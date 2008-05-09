@@ -58,7 +58,9 @@ static void read_mac(char *ifname, char *mac_addr) {
  */
 int tuntap_open(tuntap_dev *device, 
                 char *dev, /* user-definable interface name, eg. edge0 */
-                char *device_ip, char *device_mask) {
+                char *device_ip, 
+                char *device_mask,
+                const char * device_mac ) {
   char *tuntap_device = "/dev/net/tun";
 #define N2N_LINUX_SYSTEMCMD_SIZE 128
   char buf[N2N_LINUX_SYSTEMCMD_SIZE];
@@ -86,10 +88,19 @@ int tuntap_open(tuntap_dev *device,
    * is built on.  The value 1400 assumes an eth iface with MTU 1500, but would
    * fail for ppp at mtu=576.
    */
+  if ( device_mac )
+  {
+      /* Set the hw address before bringing the if up. */
+      snprintf(buf, sizeof(buf), "/sbin/ifconfig %s hw ether %s",
+               ifr.ifr_name, device_mac );
+      system(buf);
+      traceEvent(TRACE_INFO, "Setting MAC: %s", buf);
+  }
+
   snprintf(buf, sizeof(buf), "/sbin/ifconfig %s %s netmask %s mtu 1400 up",
-	   ifr.ifr_name, device_ip, device_mask);
+           ifr.ifr_name, device_ip, device_mask);
   system(buf);
-  traceEvent(TRACE_INFO, "Executed %s", buf);
+  traceEvent(TRACE_INFO, "Bringing up: %s", buf);
 
   device->ip_addr = inet_addr(device_ip);
   read_mac(dev, (char*)device->mac_addr);

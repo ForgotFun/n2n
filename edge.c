@@ -53,6 +53,7 @@ static void help() {
 	 "-c <community> "
 	 "[-k <encrypt key>] "
 	 "[-u <uid> -g <gid>]"
+	 "[-m <MAC address>]"
 	 "\n"
 	 "-l <supernode host:port> "
 	 "[-p <local port>] "
@@ -69,6 +70,7 @@ static void help() {
   printf("-p <local port>          | Local port used for connecting to supernode\n");
   printf("-u <UID>                 | User ID (numeric) to use when privileges are dropped\n");
   printf("-g <GID>                 | Group ID (numeric) to use when privileges are dropped\n");
+  printf("-m <MAC address>         | Choose a MAC address for the TAP interface, eg. -m 01:02:03:04:05:06\n");
   printf("-t                       | Use http tunneling (experimental)\n");
   printf("-r                       | Enable packet forwarding through n2n community\n");
   printf("-v                       | Verbose\n");
@@ -910,6 +912,8 @@ int main(int argc, char* argv[]) {
   size_t numPurged;
   time_t lastStatus=0;
 
+  char * device_mac=NULL;
+
   if( getenv( "N2N_KEY" )) {
     encrypt_key = strdup( getenv( "N2N_KEY" ));
   }
@@ -921,7 +925,7 @@ int main(int argc, char* argv[]) {
   supernode.family = AF_INET;
 
   optarg = NULL;
-  while((opt = getopt_long(argc, argv, "k:a:c:u:g:d:l:p:vhrt", long_options, NULL)) != EOF) {
+  while((opt = getopt_long(argc, argv, "k:a:c:u:g:m:d:l:p:vhrt", long_options, NULL)) != EOF) {
     switch (opt) {
     case 'a':
       ip_addr = strdup(optarg);
@@ -939,6 +943,11 @@ int main(int argc, char* argv[]) {
     case 'g': /* uid */
     {
         groupid=atoi(optarg);
+        break;
+    }
+    case 'm' : /* device_mac */
+    {
+        device_mac=strdup(optarg);
         break;
     }
     case 'k': /* encrypt key */
@@ -996,7 +1005,7 @@ int main(int argc, char* argv[]) {
   setuid( 0 );
   /* setgid( 0 ); */
 
-  if(tuntap_open(&device, tuntap_dev_name, ip_addr, "255.255.255.0") < 0)
+  if(tuntap_open(&device, tuntap_dev_name, ip_addr, "255.255.255.0", device_mac ) < 0)
     return(-1);
 
   if ( (userid != 0) || (groupid != 0 ) ) {
