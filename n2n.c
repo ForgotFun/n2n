@@ -48,12 +48,12 @@ static void print_header( const char * msg, const struct n2n_packet_header * hdr
   ipstr_t buf;
   ipstr_t buf2;
 
-  traceEvent(TRACE_INFO, "%s hdr: public_ip=(%d)%s:%d, private_ip=(%d)%s:%d", msg, 
+  traceEvent(TRACE_INFO, "%s hdr: public_ip=(%d)%s:%d, private_ip=(%d)%s:%d", msg,
 	     hdr->public_ip.family,
-	     intoa(ntohl(hdr->public_ip.addr_type.v4_addr), buf, sizeof(buf)),  
+	     intoa(ntohl(hdr->public_ip.addr_type.v4_addr), buf, sizeof(buf)),
 	     ntohs(hdr->public_ip.port),
-	     hdr->private_ip.family, 
-	     intoa(ntohl(hdr->private_ip.addr_type.v4_addr), buf2, sizeof(buf2)), 
+	     hdr->private_ip.family,
+	     intoa(ntohl(hdr->private_ip.addr_type.v4_addr), buf2, sizeof(buf2)),
 	     ntohs(hdr->private_ip.port)
 	     );
 }
@@ -121,10 +121,10 @@ int marshall_n2n_packet_header( u_int8_t * buf, const struct n2n_packet_header *
 
   memcpy( buf, hdr->src_mac, 6 );
   buf += 6;
-    
+
   memcpy( buf, hdr->dst_mac, 6 );
   buf += 6;
-    
+
   buf += marshall_peer_addr( buf, &(hdr->public_ip) );
   buf += marshall_peer_addr( buf, &(hdr->private_ip) );
 
@@ -182,10 +182,10 @@ int unmarshall_n2n_packet_header( struct n2n_packet_header * hdr, const u_int8_t
 
   memcpy( hdr->src_mac, buf, 6 );
   buf += 6;
-    
+
   memcpy( hdr->dst_mac, buf, 6 );
   buf += 6;
-    
+
   buf += unmarshall_peer_addr( &(hdr->public_ip), buf );
   buf += unmarshall_peer_addr( &(hdr->private_ip), buf );
 
@@ -331,7 +331,7 @@ int connect_socket(int sock_fd, struct peer_addr* _dest) {
 
   peer_addr2sockaddr_in(_dest, &dest);
 
-    /* FIX: add IPv6 support */
+  /* FIX: add IPv6 support */
   rc = connect(sock_fd, (struct sockaddr*)&dest, sizeof(struct sockaddr_in));
 
   if(rc == -1) {
@@ -342,7 +342,7 @@ int connect_socket(int sock_fd, struct peer_addr* _dest) {
   /* Send dummy http header */
   http_header = "GET / HTTP/1.0\r\n\r\n";
   len = strlen(http_header);
-  rc = send(sock_fd, http_header, len, 0);   
+  rc = send(sock_fd, http_header, len, 0);
 
   return((rc == len) ? 0 : -1);
 }
@@ -350,7 +350,7 @@ int connect_socket(int sock_fd, struct peer_addr* _dest) {
 
 /* *********************************************** */
 
-void send_packet(int sock, u_char is_udp_socket, 
+void send_packet(int sock, u_char is_udp_socket,
 		 char *packet, size_t *packet_len,
 		 const struct peer_addr *remote_peer, u_int8_t compress_data) {
   int data_sent_len;
@@ -488,7 +488,7 @@ static u_int32_t hash_value(const u_int8_t *str, const u_int8_t str_len) {
 
 /* *********************************************** */
 
-void send_ack(int sock_fd, u_char is_udp_socket, 
+void send_ack(int sock_fd, u_char is_udp_socket,
 	      u_int16_t last_rcvd_seq_id,
 	      struct n2n_packet_header *header,
 	      struct peer_addr *remote_peer,
@@ -568,13 +568,13 @@ u_int receive_data(int sock_fd, u_char is_udp_socket,
     lzo_uint decompressed_len;
 
     if(decompress_data) {
-      rc = lzo1x_decompress((u_char*)&packet[N2N_PKT_HDR_SIZE], 
+      rc = lzo1x_decompress((u_char*)&packet[N2N_PKT_HDR_SIZE],
 			    len-N2N_PKT_HDR_SIZE,
 			    (u_char*)decompressed, &decompressed_len, NULL);
-      
+
       if(rc == LZO_E_OK)
-	traceEvent(TRACE_INFO, "%u bytes decompressed into %u", len, decompressed_len);    
-      
+	traceEvent(TRACE_INFO, "%u bytes decompressed into %u", len, decompressed_len);
+
       if(packet_len > decompressed_len) {
 	memcpy(&packet[N2N_PKT_HDR_SIZE], decompressed, decompressed_len);
 	len = decompressed_len+N2N_PKT_HDR_SIZE;
@@ -609,7 +609,7 @@ u_int receive_data(int sock_fd, u_char is_udp_socket,
     }
 
     traceEvent(TRACE_INFO, "+++ Received %s packet [rcvd_from=%s:%d][msg_type=%s][seq_id=%d]",
-	       pkt_type, 
+	       pkt_type,
 	       intoa(ntohl(from->addr_type.v4_addr), from_ip_buf, sizeof(from_ip_buf)),
 	       ntohs(from->port), msg_type2str(hdr->msg_type),
 	       hdr->sequence_id);
@@ -622,13 +622,13 @@ u_int receive_data(int sock_fd, u_char is_udp_socket,
 #ifdef HANDLE_RETRANSMISSION
     if((hdr->pkt_type == packet_reliable_data)
        && (hdr->msg_type == MSG_TYPE_PACKET)) {
-      (*discarded_pkt) = handle_ack(sock_fd,  is_udp_socket, hdr, 
+      (*discarded_pkt) = handle_ack(sock_fd,  is_udp_socket, hdr,
 				    &payload[6], payload, from, tun_mac_addr);
     } else
       (*discarded_pkt) = 0;
 #endif
   } else
-    traceEvent(TRACE_WARNING, "Receive error [%s] or pkt too short [len=%d]\n", 
+    traceEvent(TRACE_WARNING, "Receive error [%s] or pkt too short [len=%d]\n",
 	       strerror(errno), len);
 
   return(len);
@@ -714,8 +714,8 @@ static HEAP_ALLOC(wrkmem,LZO1X_1_MEM_COMPRESS);
 
 /* ******************************************************* */
 
-u_int send_data(int sock_fd, u_char is_udp_socket, 
-		char *packet, size_t *packet_len, 
+u_int send_data(int sock_fd, u_char is_udp_socket,
+		char *packet, size_t *packet_len,
 		const struct peer_addr *to, u_int8_t compress_data) {
   char compressed[1600];
   int rc;
@@ -729,20 +729,20 @@ u_int send_data(int sock_fd, u_char is_udp_socket,
   memcpy(compressed, packet, N2N_PKT_HDR_SIZE);
 
   if(compress_data) {
-    rc = lzo1x_1_compress((u_char*)&packet[N2N_PKT_HDR_SIZE], 
+    rc = lzo1x_1_compress((u_char*)&packet[N2N_PKT_HDR_SIZE],
 			  *packet_len - N2N_PKT_HDR_SIZE,
-			  (u_char*)&compressed[N2N_PKT_HDR_SIZE], 
+			  (u_char*)&compressed[N2N_PKT_HDR_SIZE],
 			  &compressed_len, wrkmem);
     compressed_len += N2N_PKT_HDR_SIZE;
-    
+
     traceEvent(TRACE_INFO, "%u bytes compressed into %u", *packet_len, compressed_len);
     /* *packet_len = compressed_len; */
-    
+
     if(is_udp_socket) {
       struct sockaddr_in _to;
-      
+
       peer_addr2sockaddr_in(to, &_to);
-      rc = sendto(sock_fd, compressed, compressed_len, 0, 
+      rc = sendto(sock_fd, compressed, compressed_len, 0,
 		  (struct sockaddr*)&_to, sizeof(struct sockaddr_in));
     } else {
       char send_len[5];
@@ -759,7 +759,7 @@ u_int send_data(int sock_fd, u_char is_udp_socket,
   } else {
     compressed_len = *packet_len;
     if(is_udp_socket)
-      rc = sendto(sock_fd, packet, compressed_len, 0, 
+      rc = sendto(sock_fd, packet, compressed_len, 0,
 		  (struct sockaddr*)to, sizeof(struct sockaddr_in));
     else {
       char send_len[5];
@@ -770,12 +770,12 @@ u_int send_data(int sock_fd, u_char is_udp_socket,
         return(-1);
       rc = send(sock_fd, compressed, compressed_len, 0);
     }
-    
+
     if(rc == -1) {
       ipstr_t ip_buf;
 
       traceEvent(TRACE_WARNING, "sendto() failed while attempting to send data to %s:%d",
-		 intoa(ntohl(to->addr_type.v4_addr), ip_buf, sizeof(ip_buf)), 
+		 intoa(ntohl(to->addr_type.v4_addr), ip_buf, sizeof(ip_buf)),
 		 ntohs(to->port));
     }
   }
@@ -793,9 +793,9 @@ u_int send_data(int sock_fd, u_char is_udp_socket,
 /* *********************************************** */
 
 u_int reliable_sendto(int sock_fd, u_char is_udp_socket,
-		      char *packet, size_t *packet_len, 
+		      char *packet, size_t *packet_len,
 		      const struct peer_addr *to, u_int8_t compress_data) {
-/*   char *payload = &packet[N2N_PKT_HDR_SIZE]; */
+  /*   char *payload = &packet[N2N_PKT_HDR_SIZE]; */
   struct n2n_packet_header hdr_storage;
   struct n2n_packet_header *hdr = &hdr_storage;
   macstr_t src_mac_buf;
@@ -809,13 +809,13 @@ u_int reliable_sendto(int sock_fd, u_char is_udp_socket,
   hdr->pkt_type    = packet_reliable_data;
 
   traceEvent(TRACE_INFO, "Sent reliable packet [msg_type=%s][seq_id=%d][src_mac=%s][dst_mac=%s]",
-             msg_type2str(hdr->msg_type), hdr->sequence_id, 
+             msg_type2str(hdr->msg_type), hdr->sequence_id,
              macaddr_str(&packet[6], src_mac_buf, sizeof(src_mac_buf)),
              macaddr_str(packet, dst_mac_buf, sizeof(dst_mac_buf)));
 
   marshall_n2n_packet_header( (u_int8_t *)packet, hdr );
 
-  return(send_data(sock_fd, is_udp_socket, 
+  return(send_data(sock_fd, is_udp_socket,
                    packet, packet_len, to, compress_data));
 }
 
@@ -824,7 +824,7 @@ u_int reliable_sendto(int sock_fd, u_char is_udp_socket,
 /* unreliable_sendto is passed a fully marshalled, packet. Its purpose is to set
  * the unreliable flags but leave the rest of the packet untouched. */
 u_int unreliable_sendto(int sock_fd, u_char is_udp_socket,
-			char *packet, size_t *packet_len, 
+			char *packet, size_t *packet_len,
 			const struct peer_addr *to, u_int8_t compress_data) {
   struct n2n_packet_header hdr_storage;
   struct n2n_packet_header *hdr = &hdr_storage;
@@ -838,13 +838,13 @@ u_int unreliable_sendto(int sock_fd, u_char is_udp_socket,
   hdr->pkt_type    = packet_unreliable_data;
 
   traceEvent(TRACE_INFO, "Sent unreliable packet [msg_type=%s][seq_id=%d][src_mac=%s][dst_mac=%s]",
-	     msg_type2str(hdr->msg_type), hdr->sequence_id, 
+	     msg_type2str(hdr->msg_type), hdr->sequence_id,
 	     macaddr_str(hdr->src_mac, src_mac_buf, sizeof(src_mac_buf)),
 	     macaddr_str(hdr->dst_mac, dst_mac_buf, sizeof(dst_mac_buf)));
 
   marshall_n2n_packet_header( (u_int8_t *)packet, hdr );
 
-  return(send_data(sock_fd, is_udp_socket, 
+  return(send_data(sock_fd, is_udp_socket,
 		   packet, packet_len, to, compress_data));
 }
 
@@ -866,7 +866,7 @@ char* msg_type2str(u_short msg_type) {
 
 void hexdump(char *buf, u_int len) {
   int i;
-  
+
   for(i=0; i<len; i++) {
     if((i > 0) && ((i % 16) == 0)) printf("\n");
     printf("%02X ", buf[i] & 0xFF);
@@ -880,7 +880,7 @@ void hexdump(char *buf, u_int len) {
 void print_n2n_version() {
   printf("Welcome to n2n v.%s for %s\n"
          "Built on %s\n"
-		 "Copyright 2007-08 - http://www.ntop.org\n\n",
+	 "Copyright 2007-08 - http://www.ntop.org\n\n",
          version, osName, buildDate);
 }
 
@@ -902,72 +902,72 @@ size_t purge_expired_registrations( struct peer_info ** peer_list ) {
 }
 
 /** Purge old items from the peer_list and return the number of items that were removed. */
-size_t purge_peer_list( struct peer_info ** peer_list, 
-                        time_t purge_before ) 
+size_t purge_peer_list( struct peer_info ** peer_list,
+                        time_t purge_before )
 {
-    struct peer_info *scan;
-    struct peer_info *prev;
-    size_t retval=0;
+  struct peer_info *scan;
+  struct peer_info *prev;
+  size_t retval=0;
 
-    scan = *peer_list;
-    prev = NULL;
-    while(scan != NULL) 
+  scan = *peer_list;
+  prev = NULL;
+  while(scan != NULL)
     {
-        if(scan->last_seen < purge_before) 
+      if(scan->last_seen < purge_before)
         {
-            struct peer_info *next = scan->next;
+	  struct peer_info *next = scan->next;
 
-            if(prev == NULL)
+	  if(prev == NULL)
             {
-                *peer_list = next;
+	      *peer_list = next;
             }
-            else
+	  else
             {
-                prev->next = next;
+	      prev->next = next;
             }
 
-            ++retval;
-            free(scan);
-            scan = next;
-        } 
-        else 
+	  ++retval;
+	  free(scan);
+	  scan = next;
+        }
+      else
         {
-            prev = scan;
-            scan = scan->next;
+	  prev = scan;
+	  scan = scan->next;
         }
     }
 
-    return retval;
+  return retval;
 }
 
 static u_int8_t hex2byte( const char * s )
 {
-    char tmp[3];
-    tmp[0]=s[0];
-    tmp[1]=s[1];
-    tmp[2]=0; /* NULL term */
+  char tmp[3];
+  tmp[0]=s[0];
+  tmp[1]=s[1];
+  tmp[2]=0; /* NULL term */
 
-    return strtol( s, NULL, 16 );
+  return strtol( s, NULL, 16 );
 }
 
 extern int str2mac( u_int8_t * outmac /* 6 bytes */, const char * s )
 {
-    size_t i;
+  size_t i;
 
-    /* break it down as one case for the first "HH", the 5 x through loop for
-     * each ":HH" where HH is a two hex nibbles in ASCII. */
+  /* break it down as one case for the first "HH", the 5 x through loop for
+   * each ":HH" where HH is a two hex nibbles in ASCII. */
 
-    *outmac=hex2byte(s);
-    ++outmac;
-    s+=2; /* don't skip colon yet - helps generalise loop. */
+  *outmac=hex2byte(s);
+  ++outmac;
+  s+=2; /* don't skip colon yet - helps generalise loop. */
 
-    for (i=1; i<6; ++i )
+  for (i=1; i<6; ++i )
     {
-        s+=1;
-        *outmac=hex2byte(s);
-        ++outmac;
-        s+=2;
+      s+=1;
+      *outmac=hex2byte(s);
+      ++outmac;
+      s+=2;
     }
 
-    return 0; /* ok */
+  return 0; /* ok */
 }
