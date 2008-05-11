@@ -25,8 +25,9 @@ N2N_OBJS=n2n.o minilzo.o twofish.o tuntap_linux.o tuntap_osx.o version.o
 LIBS=-lpthread
 
 APPS=edge supernode
+DOCS=edge.8.gz supernode.1.gz
 
-all: $(APPS)
+all: $(APPS) $(DOCS)
 
 edge: edge.c $(N2N_LIB) n2n.h Makefile
 	$(CC) $(CFLAGS) edge.c $(N2N_LIB) $(LIBS) -o edge
@@ -50,7 +51,7 @@ version.c:
 	date +"%D %r" | sed -e 's/.*/char * buildDate = "&";/' >> version.c
 
 clean:
-	rm -rf $(N2N_OBJS) $(N2N_LIB) $(APPS) *.dSYM *~ version.c
+	rm -rf $(N2N_OBJS) $(N2N_LIB) $(APPS) $(DOCS) *.dSYM *~ version.c
 
 install: edge supernode edge.8.gz supernode.1.gz
 	$(MKDIR) $(BINDIR) $(SBINDIR) $(MAN1DIR) $(MAN8DIR)

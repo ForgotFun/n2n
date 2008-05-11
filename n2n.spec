@@ -1,6 +1,6 @@
 Summary: N2N peer-to-peer virtual private network system.
 Name: n2n
-Version: 1.0
+Version: 1.2
 Release: 1
 License: GPLv3
 Vendor: ntop.org
@@ -18,13 +18,15 @@ before direct peer-to-peer exchange is established.
 Once direct packet exchange is established, the supernode is not required.
 
 %prep
+
 %setup -q
+
+echo -e "\n *** Building ${RPM_PACKAGE_NAME}-${RPM_PACKAGE_VERSION}-${RPM_PACKAGE_RELEASE} ***\n"
 
 %build
 make
 
 %install
-rm -rf $RPM_BUILD_ROOT
 make PREFIX=${RPM_BUILD_ROOT}/usr install
 
 %clean
