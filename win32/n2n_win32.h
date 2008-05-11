@@ -59,9 +59,10 @@ typedef struct tuntap_dev {
 	HANDLE device_handle;
 	char *device_name;
 	char *ifName;
-	u_int32_t ip_addr, device_mask, mtu;
-	u_char mac_addr[6];
 	OVERLAPPED overlap_read, overlap_write;
+	u_int8_t      mac_addr[6];
+	u_int32_t     ip_addr, device_mask;
+	u_int         mtu;
 } tuntap_dev;
 
 #endif

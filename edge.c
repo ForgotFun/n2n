@@ -52,7 +52,9 @@ static void help() {
 	 "-a <tun IP address> "
 	 "-c <community> "
 	 "[-k <encrypt key>] "
+#ifndef WIN32
 	 "[-u <uid> -g <gid>]"
+#endif
 	 "[-m <MAC address>]"
 	 "\n"
 	 "-l <supernode host:port> "
@@ -897,6 +899,33 @@ void readFromIPSocket()
     }
 }
 
+/* ***************************************************** */
+
+
+#ifdef WIN32
+static DWORD tunReadThread(LPVOID lpArg )
+{
+  while(1) {
+	readFromTAPSocket();
+  }
+
+  return((DWORD)NULL);
+}
+
+/* ***************************************************** */
+
+static void startTunReadThread() {
+  HANDLE hThread;
+  DWORD dwThreadId;
+
+  hThread = CreateThread(NULL, /* no security attributes */
+			 0,            /* use default stack size */
+			 (LPTHREAD_START_ROUTINE)tunReadThread, /* thread function */
+			 NULL,     /* argument to thread function */
+			 0,            /* use default creation flags */
+			 &dwThreadId); /* returns the thread identifier */
+}
+#endif
 
 /* ***************************************************** */
 
@@ -906,8 +935,10 @@ int main(int argc, char* argv[]) {
   char *ip_addr = NULL;
   ipstr_t ip_buf;
 
+#ifndef WIN32
   uid_t userid=0; /* root is the only guaranteed ID */
   gid_t groupid=0; /* root is the only guaranteed ID */
+#endif
 
   size_t numPurged;
   time_t lastStatus=0;
@@ -935,6 +966,8 @@ int main(int argc, char* argv[]) {
       if(strlen(community_name) > COMMUNITY_LEN)
 	community_name[COMMUNITY_LEN] = '\0';
       break;
+#ifndef WIN32
+
     case 'u': /* uid */
     {
         userid=atoi(optarg);
@@ -945,7 +978,8 @@ int main(int argc, char* argv[]) {
         groupid=atoi(optarg);
         break;
     }
-    case 'm' : /* device_mac */
+#endif
+	case 'm' : /* device_mac */
     {
         device_mac=strdup(optarg);
         break;
@@ -1001,13 +1035,16 @@ int main(int argc, char* argv[]) {
        encrypt_key))
     help();
 
+#ifndef WIN32
   /* If running suid root then we need to setuid before using the force. */
   setuid( 0 );
   /* setgid( 0 ); */
+#endif
 
   if(tuntap_open(&device, tuntap_dev_name, ip_addr, "255.255.255.0", device_mac ) < 0)
     return(-1);
 
+#ifndef WIN32
   if ( (userid != 0) || (groupid != 0 ) ) {
     traceEvent(TRACE_NORMAL, "Interface up. Dropping privileges to uid=%d, gid=%d", userid, groupid);
 
@@ -1015,6 +1052,7 @@ int main(int argc, char* argv[]) {
     setreuid( userid, userid );
     setregid( groupid, groupid );
   }
+#endif
 
   traceEvent(TRACE_NORMAL, "Using supernode %s:%d",
 	     intoa(ntohl(supernode.addr_type.v4_addr), ip_buf, sizeof(ip_buf)),
@@ -1041,6 +1079,9 @@ int main(int argc, char* argv[]) {
   traceEvent(TRACE_NORMAL, "");
   traceEvent(TRACE_NORMAL, "Ready");
 
+#ifdef WIN32
+	startTunReadThread();
+#endif
 
   /* Main loop
    *
@@ -1050,15 +1091,17 @@ int main(int argc, char* argv[]) {
    */
 
   while(1) {
-    int rc, max_sock;
+    int rc, max_sock = 0;
     fd_set socket_mask;
     struct timeval wait_time;
     time_t nowTime;
 
     FD_ZERO(&socket_mask);
     FD_SET(edge_sock_fd, &socket_mask);
-    FD_SET(device.fd, &socket_mask);
-    max_sock = MAX( edge_sock_fd, device.fd );
+#ifndef WIN32
+	FD_SET(device.fd, &socket_mask);
+    max_sock = max( edge_sock_fd, device.fd );
+#endif
 
     wait_time.tv_sec = SOCKET_TIMEOUT_INTERVAL_SECS; wait_time.tv_usec = 0;
 
@@ -1076,13 +1119,15 @@ int main(int argc, char* argv[]) {
             readFromIPSocket();
         }
 
+#ifndef WIN32
         if(FD_ISSET(device.fd, &socket_mask)) 
         {
             /* Read an ethernet frame from the TAP socket. Write on the IP
              * socket. */
             readFromTAPSocket();
         }
-    }
+#endif
+	}
 
     update_registrations(edge_sock_fd, is_udp_sock);
 

@@ -880,7 +880,7 @@ void hexdump(char *buf, u_int len) {
 void print_n2n_version() {
   printf("Welcome to n2n v.%s for %s\n"
          "Built on %s\n"
-         "Copyright 2007-08 by Luca Deri <deri@ntop.org>\n\n",
+		 "Copyright 2007-08 - http://www.ntop.org\n\n",
          version, osName, buildDate);
 }
 

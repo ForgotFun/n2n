@@ -190,10 +190,11 @@ static void handle_packet(char *packet, u_int packet_len,
 	   && (is_dst_broad_multi_cast || (memcmp(scan->mac_addr, hdr->dst_mac, 6) == 0))
 	   && (memcmp(sender, &scan->public_ip, sizeof(struct peer_addr)) /* No L3 self-send */)
 	   && (memcmp(hdr->dst_mac, hdr->src_mac, 6) /* No L2 self-send */)) {
+	   int data_sent_len;
 	  size_t len = packet_len;
           
           marshall_n2n_packet_header( (u_int8_t *)packet, hdr );
-	  int data_sent_len = send_data(scan->sock_fd, scan->is_udp_socket, packet, &len, &scan->public_ip, 0);
+	   data_sent_len = send_data(scan->sock_fd, scan->is_udp_socket, packet, &len, &scan->public_ip, 0);
 
 	  if(data_sent_len != len)
 	    traceEvent(TRACE_WARNING, "sendto() [sent=%d][attempted_to_send=%d] [%s]\n",
