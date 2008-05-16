@@ -992,17 +992,48 @@ int main(int argc, char* argv[]) {
       break;
     case 'l': /* supernode-list */
       {
-	char *supernode_host = strtok(optarg, ":");
-	if(supernode_host) {
-	  char *supernode_port = strtok(NULL, ":");
+        char *supernode_host = strtok(optarg, ":");
+        if(supernode_host) {
+          char *supernode_port = strtok(NULL, ":");
+          const struct addrinfo aihints = {0, PF_INET, 0, 0, 0, NULL, NULL, NULL};
+          struct addrinfo * ainfo = NULL;
+          int nameerr;
 
-	  if(supernode_port) {
-	    supernode.port = htons(atoi(supernode_port));
-	    supernode.addr_type.v4_addr = inet_addr(supernode_host);
-	  } else
-	    traceEvent(TRACE_WARNING, "Wrong supernode parameter (-l)");
-	} else
-	  traceEvent(TRACE_WARNING, "Wrong supernode parameter (-l)");
+          if ( supernode_port )
+          {
+              supernode.port = htons(atoi(supernode_port));
+          }
+          else
+          {
+              traceEvent(TRACE_WARNING, "Bad supernode parameter (-l <host:port>)");
+          }
+
+          nameerr = getaddrinfo( supernode_host, NULL, &aihints, &ainfo );
+
+          if( 0 == nameerr ) 
+          {
+              struct sockaddr_in * saddr;
+
+              /* ainfo s the head of a linked list if non-NULL. */
+              if ( ainfo && (PF_INET == ainfo->ai_family) )
+              {
+                  /* It is definitely and IPv4 address -> sockaddr_in */
+                  saddr = (struct sockaddr_in *)ainfo->ai_addr;
+
+                  supernode.addr_type.v4_addr = saddr->sin_addr.s_addr;
+              }
+              else
+              {
+                  /* Should only return IPv4 addresses due to aihints. */
+                  traceEvent(TRACE_WARNING, "Failed to resolve supernode IPv4 address for %s", supernode_host);
+              }
+
+              freeaddrinfo(ainfo); /* free everything allocated by getaddrinfo(). */
+              ainfo=NULL;
+          } else
+              traceEvent(TRACE_WARNING, "Failed to resolve supernode host %s", supernode_host);
+        } else
+          traceEvent(TRACE_WARNING, "Wrong supernode parameter (-l <host:port>)");
       }
       break;
 #ifdef __linux__
