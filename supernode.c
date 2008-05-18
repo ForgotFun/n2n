@@ -37,12 +37,39 @@ static struct peer_info *known_peers = NULL;
 
 /* *********************************************** */
 
+/** Turn a REGISTER request around and send a REGISTER_ACK packet back to the
+ *  sender.
+ *
+ *  This needs to be done for all incoming REGISTER packets to keep firewalls
+ *  open
+ */
+static void send_register_ack( int sock_fd, u_char is_udp_socket,
+                               const struct peer_addr *destination_peer,
+                               const struct n2n_packet_header * reqhdr )
+{
+    struct n2n_packet_header hdr;
+    u_int8_t pkt[N2N_PKT_HDR_SIZE];
+    size_t len = sizeof(hdr);
+
+    fill_standard_header_fields(sock_fd, is_udp_socket, &hdr, NULL /* zero src MAC */ );
+    hdr.sent_by_supernode = 1;
+    hdr.msg_type = MSG_TYPE_REGISTER_ACK;
+    memcpy( hdr.community_name, reqhdr->community_name, COMMUNITY_LEN);
+    memcpy( hdr.dst_mac, reqhdr->src_mac, 6); /* turn it around */
+    /* leave IP sockets unfilled. */
+
+    marshall_n2n_packet_header( pkt, &hdr );
+    send_packet(sock_fd, is_udp_socket, (char *)pkt, &len, destination_peer, 1);
+}
+
 static void register_peer(struct n2n_packet_header *hdr,
 			  struct peer_addr *sender,
 			  int sock_fd, u_char is_udp_socket) {
   struct peer_info *scan = known_peers;
   ipstr_t buf, buf1;
   macstr_t mac_buf;
+
+  send_register_ack( sock_fd, is_udp_socket, sender, hdr ); /* keep firewalls open */
 
   while(scan != NULL) {
     if((strcmp(scan->community_name, hdr->community_name) == 0)
