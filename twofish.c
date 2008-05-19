@@ -39,6 +39,7 @@
 #include <stdlib.h>
 #include <time.h>
 #include <ctype.h>
+#include <sys/types.h>
 #include "twofish.h"
 
 

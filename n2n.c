@@ -476,6 +476,7 @@ void fill_standard_header_fields(int sock, u_char is_udp_packet,
 
 /* *********************************************** */
 
+#if 0
 static u_int32_t hash_value(const u_int8_t *str, const u_int8_t str_len) {
   u_int32_t hash = 0, i;
 
@@ -485,6 +486,7 @@ static u_int32_t hash_value(const u_int8_t *str, const u_int8_t str_len) {
 
   return(hash % SEND_SEQ_ID_HASH_LEN);
 }
+#endif
 
 /* *********************************************** */
 
@@ -636,6 +638,7 @@ u_int receive_data(int sock_fd, u_char is_udp_socket,
 
 /* *********************************************** */
 
+#if 0
 static u_int32_t queue_packet(struct send_hash_entry *scan,
 			      char *packet,
 			      u_int16_t packet_len) {
@@ -659,9 +662,11 @@ static u_int32_t queue_packet(struct send_hash_entry *scan,
   scan->num_unacked_pkts++;
   return(pkt->seq_id);
 }
+#endif
 
 /* *********************************************** */
 
+#if 0
 /* Used for sending packets out */
 static u_int32_t mac2sequence(u_int8_t *mac_addr, char *packet,
 			      u_int16_t packet_len) {
@@ -700,6 +705,7 @@ static u_int32_t mac2sequence(u_int8_t *mac_addr, char *packet,
 
   return(queue_packet(scan, packet, packet_len));
 }
+#endif
 
 /* *********************************************** */
 

@@ -68,15 +68,20 @@
 #include <linux/if_tun.h>
 #endif
 
+#ifdef __FreeBSD__
+#include <net/if_tap.h>
+#include <netinet/in_systm.h>
+#endif
+
 #include <syslog.h>
 #include <sys/wait.h>
 #include <net/ethernet.h>
+#include <sys/types.h>
 #include <netinet/in.h>
 #include <netinet/ip.h>
 #include <netinet/udp.h>
 #include <signal.h>
 #include <arpa/inet.h>
-#include <sys/types.h>
 #include <unistd.h>
 #endif
 
