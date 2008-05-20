@@ -16,6 +16,7 @@
  *
  * Code contributions courtesy of:
  * Richard Andrews <bbmaj7@yahoo.com.au>
+ * Babak Farrokhi <babak@farrokhi.net> [FreeBSD port]
  *
 */
 
@@ -34,10 +35,8 @@
    tunctl -u UID -t tunX
 */
 
-#ifndef WIN32
-#ifndef __linux__
+#if defined(__APPLE__) && defined(__MACH__)
 #define _DARWIN_
-#endif
 #endif
 
 #ifdef WIN32
@@ -69,19 +68,18 @@
 #endif
 
 #ifdef __FreeBSD__
-#include <net/if_tap.h>
 #include <netinet/in_systm.h>
 #endif
 
 #include <syslog.h>
 #include <sys/wait.h>
 #include <net/ethernet.h>
-#include <sys/types.h>
 #include <netinet/in.h>
 #include <netinet/ip.h>
 #include <netinet/udp.h>
 #include <signal.h>
 #include <arpa/inet.h>
+#include <sys/types.h>
 #include <unistd.h>
 #endif
 
