@@ -607,10 +607,14 @@ static void send_packet2net(int sock_fd, u_char is_udp_socket,
   if(!allow_routed_packets) {
     if(ntohs(eh->ether_type) == 0x0800) {
 
+      /* This is an IP packet from the local source address - not forwarded. */
+#define ETH_FRAMESIZE 14
+#define IP4_SRCOFFSET 12
+#define IP4_ADDRSIZE  4
       /* Note: all elements of the_ip are in network order */
-      struct ip *the_ip = (struct ip*)(decrypted_msg+sizeof(struct ether_header));
-
-      if(the_ip->ip_src.s_addr != device.ip_addr) {
+      if( 0 != memcmp( decrypted_msg + ETH_FRAMESIZE + IP4_SRCOFFSET, 
+                       &(device.ip_addr), 
+                       IP4_ADDRSIZE ) ) {
 	/* This is a packet that needs to be routed */
 	traceEvent(TRACE_INFO, "Discarding routed packet");
 	return;
