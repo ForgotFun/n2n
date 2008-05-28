@@ -883,14 +883,21 @@ void readFromIPSocket()
 
 	    send_register(edge_sock_fd, is_udp_sock, &hdr->public_ip, 1); /* Send ACK back */
 	  } else if(hdr->msg_type == MSG_TYPE_REGISTER_ACK) {
-	    traceEvent(TRACE_NORMAL, "Received registration ack from remote peer [ip=%s:%d]",
+	    traceEvent(TRACE_NORMAL, "Received REGISTER_ACK from remote peer [ip=%s:%d]",
 		       intoa(ntohl(hdr->public_ip.addr_type.v4_addr), ip_buf, sizeof(ip_buf)),
 		       ntohs(hdr->public_ip.port));
 
 	    /* if ( 0 == memcmp(hdr->dst_mac, device.mac_addr, 6) ) */
 	    {
-	      /* Move from pending_peers to known_peers; ignore if not in pending. */
-	      set_peer_operational( hdr );
+                if ( hdr->sent_by_supernode )
+                {
+                    /* Response to supernode registration. Supernode is not in the pending_peers list. */
+                }
+                else
+                {
+                    /* Move from pending_peers to known_peers; ignore if not in pending. */
+                    set_peer_operational( hdr );
+                }
 	    }
 
 	  } else {

@@ -77,14 +77,15 @@ static void register_peer(struct n2n_packet_header *hdr,
 
       scan->last_seen = time(NULL);
       if ( ( 0 != memcmp(&scan->public_ip, sender, sizeof(struct peer_addr)) ) ||
-             ( 0 != memcmp(&scan->private_ip, &hdr->private_ip, sizeof(struct peer_addr)) ) ) 
+           ( 0 != memcmp(&scan->private_ip, &hdr->private_ip, sizeof(struct peer_addr)) ) ) 
       {
         /* Something is actually different. */
         memcpy(&scan->public_ip, sender, sizeof(struct peer_addr));
         memcpy(&scan->private_ip, &hdr->private_ip, sizeof(struct peer_addr));
 
         /* Overwrite existing peer */
-        traceEvent(TRACE_NORMAL, "Re-registered node [public_ip=%s:%d][private_ip=%s:%d][mac=%s][community=%s]",
+        traceEvent(TRACE_NORMAL, "Re-registered node [public_ip=(%d)%s:%d][private_ip=%s:%d][mac=%s][community=%s]",
+                   scan->public_ip.family,
                    intoa(ntohl(scan->public_ip.addr_type.v4_addr), buf, sizeof(buf)),
                    ntohs(scan->public_ip.port),
                    intoa(ntohl(scan->private_ip.addr_type.v4_addr), buf1, sizeof(buf1)),
@@ -111,7 +112,8 @@ static void register_peer(struct n2n_packet_header *hdr,
   scan->sock_fd = sock_fd, scan->is_udp_socket = is_udp_socket;
   known_peers = scan;
 
-  traceEvent(TRACE_NORMAL, "Registered new node [public_ip=%s:%d][private_ip=%s:%d][mac=%s][community=%s]",
+  traceEvent(TRACE_NORMAL, "Registered new node [public_ip=(%d)%s:%d][private_ip=%s:%d][mac=%s][community=%s]",
+             scan->public_ip.family,
 	     intoa(ntohl(scan->public_ip.addr_type.v4_addr), buf, sizeof(buf)),
 	     ntohs(scan->public_ip.port),
 	     intoa(ntohl(scan->private_ip.addr_type.v4_addr), buf1, sizeof(buf1)),
@@ -211,17 +213,18 @@ static void handle_packet(char *packet, u_int packet_len,
       memcpy(&hdr->public_ip, sender, sizeof(struct peer_addr));
       hdr->sent_by_supernode = 1;
 
+      marshall_n2n_packet_header( (u_int8_t *)packet, hdr );
+
       scan = known_peers;
       while(scan != NULL) {
 	if((strcmp(scan->community_name, hdr->community_name) == 0)
 	   && (is_dst_broad_multi_cast || (memcmp(scan->mac_addr, hdr->dst_mac, 6) == 0))
 	   && (memcmp(sender, &scan->public_ip, sizeof(struct peer_addr)) /* No L3 self-send */)
 	   && (memcmp(hdr->dst_mac, hdr->src_mac, 6) /* No L2 self-send */)) {
-	   int data_sent_len;
-	  size_t len = packet_len;
+          int data_sent_len;
+          size_t len = packet_len;
           
-          marshall_n2n_packet_header( (u_int8_t *)packet, hdr );
-	   data_sent_len = send_data(scan->sock_fd, scan->is_udp_socket, packet, &len, &scan->public_ip, 0);
+          data_sent_len = send_data(scan->sock_fd, scan->is_udp_socket, packet, &len, &scan->public_ip, 0);
 
 	  if(data_sent_len != len)
 	    traceEvent(TRACE_WARNING, "sendto() [sent=%d][attempted_to_send=%d] [%s]\n",

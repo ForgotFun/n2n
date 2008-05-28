@@ -726,6 +726,7 @@ u_int send_data(int sock_fd, u_char is_udp_socket,
   char compressed[1600];
   int rc;
   lzo_uint compressed_len;
+  struct sockaddr_in destsock;
 
   if(*packet_len < N2N_PKT_HDR_SIZE) {
     traceEvent(TRACE_WARNING, "The packet about to be sent is too short [len=%d]\n", *packet_len);
@@ -733,6 +734,8 @@ u_int send_data(int sock_fd, u_char is_udp_socket,
   }
 
   memcpy(compressed, packet, N2N_PKT_HDR_SIZE);
+
+  peer_addr2sockaddr_in(to, &destsock);
 
   if(compress_data) {
     rc = lzo1x_1_compress((u_char*)&packet[N2N_PKT_HDR_SIZE],
@@ -745,11 +748,8 @@ u_int send_data(int sock_fd, u_char is_udp_socket,
     /* *packet_len = compressed_len; */
 
     if(is_udp_socket) {
-      struct sockaddr_in _to;
-
-      peer_addr2sockaddr_in(to, &_to);
       rc = sendto(sock_fd, compressed, compressed_len, 0,
-		  (struct sockaddr*)&_to, sizeof(struct sockaddr_in));
+		  (struct sockaddr*)&destsock, sizeof(struct sockaddr_in));
     } else {
       char send_len[5];
 
@@ -766,7 +766,7 @@ u_int send_data(int sock_fd, u_char is_udp_socket,
     compressed_len = *packet_len;
     if(is_udp_socket)
       rc = sendto(sock_fd, packet, compressed_len, 0,
-		  (struct sockaddr*)to, sizeof(struct sockaddr_in));
+		  (struct sockaddr*)&destsock, sizeof(struct sockaddr_in));
     else {
       char send_len[5];
 
