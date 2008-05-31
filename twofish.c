@@ -177,7 +177,7 @@ TWOFISH *TwoFishInit(const u_int8_t *userkey, u_int32_t keysize)
           TwoFish_srand=FALSE;
           /* REVISIT: BbMaj7 : Should choose something with less predictability
            * particularly for embedded targets with no real-time clock. */
-          srand(time(NULL)); 
+          srand((unsigned int)time(NULL)); 
       }
   }
   return tfdata;					/* return the data pointer */

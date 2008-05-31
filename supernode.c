@@ -317,8 +317,12 @@ DWORD tcpReadThread(LPVOID lpArg)
       break;
   }
 
-  close(sock_fd);
+  closesocket(sock_fd);
+#ifdef WIN32
+	return(0);
+#else
   return(NULL);
+#endif
 }
 
 
@@ -422,8 +426,8 @@ int main(int argc, char* argv[]) {
     purge_expired_registrations( &known_peers );
   } /* while */
 
-  close(udp_sock_fd);
-  close(tcp_sock_fd);
+  closesocket(udp_sock_fd);
+  closesocket(tcp_sock_fd);
 
   return(0);
 }

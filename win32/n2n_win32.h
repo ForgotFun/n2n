@@ -17,6 +17,8 @@ typedef short int16_t;
 typedef char int8_t;
 
 #define snprintf _snprintf
+#define strdup _strdup
+
 #define socklen_t int
 
 #define ETHER_ADDR_LEN 6

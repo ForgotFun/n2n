@@ -61,7 +61,7 @@ static void print_header( const char * msg, const struct n2n_packet_header * hdr
 /* *********************************************** */
 
 extern void sockaddr_in2peer_addr(struct sockaddr_in *in, struct peer_addr *out) {
-  out->family            = in->sin_family;
+  out->family            = (u_int8_t)in->sin_family;
   out->port              = in->sin_port;
   out->addr_type.v4_addr = in->sin_addr.s_addr;
 }
@@ -871,7 +871,7 @@ char* msg_type2str(u_short msg_type) {
 /* *********************************************** */
 
 void hexdump(char *buf, u_int len) {
-  int i;
+  u_int i;
 
   for(i=0; i<len; i++) {
     if((i > 0) && ((i % 16) == 0)) printf("\n");
@@ -953,7 +953,7 @@ static u_int8_t hex2byte( const char * s )
   tmp[1]=s[1];
   tmp[2]=0; /* NULL term */
 
-  return strtol( s, NULL, 16 );
+  return((u_int8_t)strtol( s, NULL, 16 ));
 }
 
 extern int str2mac( u_int8_t * outmac /* 6 bytes */, const char * s )

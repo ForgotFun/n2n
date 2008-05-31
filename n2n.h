@@ -81,6 +81,8 @@
 #include <arpa/inet.h>
 #include <sys/types.h>
 #include <unistd.h>
+
+#define closesocket(a) close(a)
 #endif
 
 #include <string.h>

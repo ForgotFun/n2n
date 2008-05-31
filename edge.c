@@ -51,7 +51,7 @@ static void help() {
 #endif
 	 "-a <tun IP address> "
 	 "-c <community> "
-	 "[-k <encrypt key>] "
+	 "-k <encrypt key> "
 #ifndef WIN32
 	 "[-u <uid> -g <gid>]"
 #endif
@@ -70,9 +70,12 @@ static void help() {
   printf("-k <encrypt key>         | Encryption key (ASCII) - also N2N_KEY=<encrypt key>\n");
   printf("-l <supernode host:port> | Supernode IP:port\n");
   printf("-p <local port>          | Local port used for connecting to supernode\n");
+#ifndef WIN32
   printf("-u <UID>                 | User ID (numeric) to use when privileges are dropped\n");
   printf("-g <GID>                 | Group ID (numeric) to use when privileges are dropped\n");
-  printf("-m <MAC address>         | Choose a MAC address for the TAP interface, eg. -m 01:02:03:04:05:06\n");
+#endif
+  printf("-m <MAC address>         | Choose a MAC address for the TAP interface\n"
+	     "                         | eg. -m 01:02:03:04:05:06\n");
   printf("-t                       | Use http tunneling (experimental)\n");
   printf("-r                       | Enable packet forwarding through n2n community\n");
   printf("-v                       | Verbose\n");
@@ -486,8 +489,7 @@ static void update_registrations(int sock_fd, u_char is_udp_socket) {
  *
  *  @return NULL if not found; otherwise pointer to peer entry.
  */
-struct peer_info * find_peer_by_mac( struct peer_info * list,
-                                     const char * mac )
+struct peer_info * find_peer_by_mac( struct peer_info * list, const char * mac )
 {
   while(list != NULL)
     {
@@ -940,6 +942,52 @@ static void startTunReadThread() {
 
 /* ***************************************************** */
 
+static void supernode2addr(char* addr) {
+	char *supernode_host = strtok(addr, ":");
+
+	if(supernode_host) {
+		char *supernode_port = strtok(NULL, ":");
+		const struct addrinfo aihints = {0, PF_INET, 0, 0, 0, NULL, NULL, NULL};
+		struct addrinfo * ainfo = NULL;
+		int nameerr;
+
+		if ( supernode_port )
+			supernode.port = htons(atoi(supernode_port));
+		else
+			traceEvent(TRACE_WARNING, "Bad supernode parameter (-l <host:port>)");
+
+		nameerr = getaddrinfo( supernode_host, NULL, &aihints, &ainfo );
+
+		if( 0 == nameerr ) 
+		{
+			struct sockaddr_in * saddr;
+
+			/* ainfo s the head of a linked list if non-NULL. */
+			if ( ainfo && (PF_INET == ainfo->ai_family) )
+			{
+				/* It is definitely and IPv4 address -> sockaddr_in */
+				saddr = (struct sockaddr_in *)ainfo->ai_addr;
+
+				supernode.addr_type.v4_addr = saddr->sin_addr.s_addr;
+			}
+			else
+			{
+				/* Should only return IPv4 addresses due to aihints. */
+				traceEvent(TRACE_WARNING, "Failed to resolve supernode IPv4 address for %s", supernode_host);
+			}
+
+			freeaddrinfo(ainfo); /* free everything allocated by getaddrinfo(). */
+			ainfo = NULL;
+		} else {
+			traceEvent(TRACE_WARNING, "Failed to resolve supernode host %s, assuming numeric", supernode_host);
+			supernode.addr_type.v4_addr = inet_addr(supernode_host);
+		}
+	} else
+		traceEvent(TRACE_WARNING, "Wrong supernode parameter (-l <host:port>)");
+}
+
+/* ***************************************************** */
+
 int main(int argc, char* argv[]) {
   int opt, local_port = 0 /* any port */;
   char *tuntap_dev_name = "edge0";
@@ -1002,51 +1050,8 @@ int main(int argc, char* argv[]) {
       allow_routing = 1;
       break;
     case 'l': /* supernode-list */
-      {
-        char *supernode_host = strtok(optarg, ":");
-        if(supernode_host) {
-          char *supernode_port = strtok(NULL, ":");
-          const struct addrinfo aihints = {0, PF_INET, 0, 0, 0, NULL, NULL, NULL};
-          struct addrinfo * ainfo = NULL;
-          int nameerr;
-
-          if ( supernode_port )
-          {
-              supernode.port = htons(atoi(supernode_port));
-          }
-          else
-          {
-              traceEvent(TRACE_WARNING, "Bad supernode parameter (-l <host:port>)");
-          }
-
-          nameerr = getaddrinfo( supernode_host, NULL, &aihints, &ainfo );
-
-          if( 0 == nameerr ) 
-          {
-              struct sockaddr_in * saddr;
-
-              /* ainfo s the head of a linked list if non-NULL. */
-              if ( ainfo && (PF_INET == ainfo->ai_family) )
-              {
-                  /* It is definitely and IPv4 address -> sockaddr_in */
-                  saddr = (struct sockaddr_in *)ainfo->ai_addr;
-
-                  supernode.addr_type.v4_addr = saddr->sin_addr.s_addr;
-              }
-              else
-              {
-                  /* Should only return IPv4 addresses due to aihints. */
-                  traceEvent(TRACE_WARNING, "Failed to resolve supernode IPv4 address for %s", supernode_host);
-              }
-
-              freeaddrinfo(ainfo); /* free everything allocated by getaddrinfo(). */
-              ainfo=NULL;
-          } else
-              traceEvent(TRACE_WARNING, "Failed to resolve supernode host %s", supernode_host);
-        } else
-          traceEvent(TRACE_WARNING, "Wrong supernode parameter (-l <host:port>)");
-      }
-      break;
+	  supernode2addr(optarg); 
+	  break;
 #ifdef __linux__
     case 'd': /* tun-device */
       tuntap_dev_name = strdup(optarg);
@@ -1073,7 +1078,7 @@ int main(int argc, char* argv[]) {
 #endif
        community_name &&
        ip_addr &&
-       (supernode.addr_type.v4_addr != 0) &&
+       supernode.addr_type.v4_addr &&
        encrypt_key))
     help();
 
@@ -1192,7 +1197,7 @@ int main(int argc, char* argv[]) {
 
   send_deregister(edge_sock_fd, is_udp_sock, &supernode);
 
-  close(edge_sock_fd);
+  closesocket(edge_sock_fd);
   tuntap_close(&device);
 
   return(0);

@@ -9,10 +9,9 @@
 #undef _UNICODE
 #define _CRT_SECURE_NO_WARNINGS
 
-#include <windows.h>
+#include <ws2tcpip.h>
 #include <stdio.h>
 #include <string.h>
-#include <winsock.h>
 
 
 
