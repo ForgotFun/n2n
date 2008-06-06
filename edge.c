@@ -54,6 +54,7 @@ static void help() {
 	 "-k <encrypt key> "
 #ifndef WIN32
 	 "[-u <uid> -g <gid>]"
+	 "[-f]"
 #endif
 	 "[-m <MAC address>]"
 	 "\n"
@@ -73,9 +74,10 @@ static void help() {
 #ifndef WIN32
   printf("-u <UID>                 | User ID (numeric) to use when privileges are dropped\n");
   printf("-g <GID>                 | Group ID (numeric) to use when privileges are dropped\n");
+  printf("-f                       | Fork and run as a daemon. Use syslog.\n");
 #endif
   printf("-m <MAC address>         | Choose a MAC address for the TAP interface\n"
-	     "                         | eg. -m 01:02:03:04:05:06\n");
+         "                         | eg. -m 01:02:03:04:05:06\n");
   printf("-t                       | Use http tunneling (experimental)\n");
   printf("-r                       | Enable packet forwarding through n2n community\n");
   printf("-v                       | Verbose\n");
@@ -988,6 +990,8 @@ static void supernode2addr(char* addr) {
 
 /* ***************************************************** */
 
+extern int useSyslog;
+
 int main(int argc, char* argv[]) {
   int opt, local_port = 0 /* any port */;
   char *tuntap_dev_name = "edge0";
@@ -997,6 +1001,7 @@ int main(int argc, char* argv[]) {
 #ifndef WIN32
   uid_t userid=0; /* root is the only guaranteed ID */
   gid_t groupid=0; /* root is the only guaranteed ID */
+  int   fork_as_daemon=0;
 #endif
 
   size_t numPurged;
@@ -1015,7 +1020,7 @@ int main(int argc, char* argv[]) {
   supernode.family = AF_INET;
 
   optarg = NULL;
-  while((opt = getopt_long(argc, argv, "k:a:c:u:g:m:d:l:p:vhrt", long_options, NULL)) != EOF) {
+  while((opt = getopt_long(argc, argv, "k:a:c:u:g:m:d:l:p:fvhrt", long_options, NULL)) != EOF) {
     switch (opt) {
     case 'a':
       ip_addr = strdup(optarg);
@@ -1035,6 +1040,11 @@ int main(int argc, char* argv[]) {
     case 'g': /* uid */
       {
         groupid=atoi(optarg);
+        break;
+      }
+    case 'f' : /* fork as daemon */
+      {
+        fork_as_daemon=1;
         break;
       }
 #endif
@@ -1121,6 +1131,14 @@ int main(int argc, char* argv[]) {
     }
   }
 
+#ifndef WIN32
+  if ( fork_as_daemon )
+  {
+      useSyslog=1; /* traceEvent output now goes to syslog. */
+      daemon( 0, 0 );
+  }
+#endif
+  
   update_registrations(edge_sock_fd, is_udp_sock);
 
   traceEvent(TRACE_NORMAL, "");

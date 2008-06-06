@@ -16,6 +16,10 @@ community.
  or
 # N2N_KEY=encryptme ./edge -d n2n0 -c mynetwork -u 99 -g 99 -m 3C:A0:12:34:56:78 -a 1.2.3.4 -l a.b.c.d:xyw
 
+Once you have this worked out, you can add the "-f" option to make edge detach
+and run as a daemon.
+
+Note that -u, -g and -f options are not available for Windows.
 
 Supernode
 --------
@@ -25,7 +29,7 @@ You need to start the supernode once
 1. ./supernode -l 1234 -v
 
 
-Dropping Root Privileges and SUID-Root Executables
+Dropping Root Privileges and SUID-Root Executables (UNIX)
 --------------------------------------------------
 
 The edge node uses superuser privileges to create a TAP network interface
@@ -44,6 +48,20 @@ done
 
 Any user can now run edge. You may not want this, but it may be convenient and
 safe if your host has only one login user.
+
+
+Running As a Daemon (UNIX)
+-------------------
+
+When given "-f" as a command line option, edge will call daemon(3) after
+successful setup. This causes the process to fork a child which closes stdin,
+stdout and stderr then sets itself as process group leader. When this is done,
+the edge command returns immediately and you will only see the edge process in
+the process listings, eg. from ps or top.
+
+If the edge command returns 0 then the daemon started successfully. If it
+returns non-zero then edge failed to start up for some reason. When edge starts
+running as a daemon, all logging goes to syslog daemon.info facility.
 
 
 (C) 2007,2008 - Luca Deri <deri@ntop.org>

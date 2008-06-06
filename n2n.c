@@ -380,7 +380,6 @@ void traceEvent(int eventTraceLevel, char* file, int line, char * format, ...) {
     char *extra_msg = "";
     time_t theTime = time(NULL);
 
-    va_start (va_ap, format);
 
     /* We have two paths - one if we're logging, one if we aren't
      *   Note that the no-log case is those systems which don't support it (WIN32),
@@ -391,7 +390,9 @@ void traceEvent(int eventTraceLevel, char* file, int line, char * format, ...) {
     memset(buf, 0, sizeof(buf));
     strftime(theDate, N2N_TRACE_DATESIZE, "%d/%b/%Y %H:%M:%S", localtime(&theTime));
 
+    va_start (va_ap, format);
     vsnprintf(buf, sizeof(buf)-1, format, va_ap);
+    va_end(va_ap);
 
     if(eventTraceLevel == 0 /* TRACE_ERROR */)
       extra_msg = "ERROR: ";
@@ -399,7 +400,6 @@ void traceEvent(int eventTraceLevel, char* file, int line, char * format, ...) {
       extra_msg = "WARNING: ";
 
     while(buf[strlen(buf)-1] == '\n') buf[strlen(buf)-1] = '\0';
-    snprintf(out_buf, sizeof(out_buf), "%s [%11s:%4d] %s%s", theDate, file, line, extra_msg, buf);
 
 #ifndef WIN32
     if(useSyslog) {
@@ -408,16 +408,21 @@ void traceEvent(int eventTraceLevel, char* file, int line, char * format, ...) {
         syslog_opened = 1;
       }
 
+      snprintf(out_buf, sizeof(out_buf), "%s%s", extra_msg, buf);
       syslog(LOG_INFO, out_buf);
-    } else
+    } else {
+      snprintf(out_buf, sizeof(out_buf), "%s [%11s:%4d] %s%s", theDate, file, line, extra_msg, buf);
       printf("%s\n", out_buf);
+      fflush(stdout);
+    }
 #else
+    /* this is the WIN32 code */
+    snprintf(out_buf, sizeof(out_buf), "%s [%11s:%4d] %s%s", theDate, file, line, extra_msg, buf);
     printf("%s\n", out_buf);
+    fflush(stdout);
 #endif
   }
 
-  fflush(stdout);
-  va_end(va_ap);
 }
 
 /* *********************************************** */
