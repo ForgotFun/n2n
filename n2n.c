@@ -37,10 +37,6 @@
 char broadcast_addr[6] = { 0xFF, 0xFF, 0xFF, 0xFF, 0xFF, 0xFF };
 char multicast_addr[6] = { 0x01, 0x00, 0x05, 0x00, 0x00, 0x00 }; /* First 3 bytes are meaningful */
 
-struct send_hash_entry** send_seq_id_hash = NULL;
-struct recv_hash_entry** recv_seq_id_hash = NULL;
-TWOFISH *tf;
-
 /* ************************************** */
 
 static void print_header( const char * msg, const struct n2n_packet_header * hdr )
@@ -202,90 +198,6 @@ int unmarshall_n2n_packet_header( struct n2n_packet_header * hdr, const u_int8_t
 
 /* ************************************** */
 
-int init_n2n(u_int8_t *encrypt_pwd, u_int32_t encrypt_pwd_len) {
-#ifdef WIN32
-  initWin32();
-#endif
-
-  tf = TwoFishInit(encrypt_pwd, encrypt_pwd_len);
-
-  if(lzo_init() != LZO_E_OK) {
-    traceEvent(TRACE_ERROR, "LZO compression error");
-    return(-1);
-  }
-
-  send_seq_id_hash = (struct send_hash_entry**)calloc(SEND_SEQ_ID_HASH_LEN,
-						      sizeof(struct send_hash_entry*));
-  if(send_seq_id_hash == NULL) {
-    traceEvent(TRACE_ERROR, "Not enough memory!");
-    return(-1);
-  }
-
-  recv_seq_id_hash = (struct recv_hash_entry**)calloc(RECV_SEQ_ID_HASH_LEN,
-						      sizeof(struct recv_hash_entry*));
-  if(recv_seq_id_hash == NULL) {
-    traceEvent(TRACE_ERROR, "Not enough memory!");
-    return(-1);
-  }
-
-  return(0);
-}
-
-/* ************************************** */
-
-void term_n2n() {
-  if(send_seq_id_hash) {
-    int i;
-
-    for(i=0; i<SEND_SEQ_ID_HASH_LEN; i++) {
-      int j = 0;
-
-      if(send_seq_id_hash[j] != NULL) {
-	struct send_hash_entry *next, *scan = send_seq_id_hash[j];
-
-	while(scan != NULL) {
-	  struct packet_list *pkt_scan = scan->unacked_packet_list;
-	  next = scan->next;
-
-	  while(pkt_scan != NULL) {
-	    struct packet_list *nxt;
-
-	    free(pkt_scan->packet);
-	    nxt = pkt_scan->next;
-	    free(pkt_scan);
-	    pkt_scan = nxt;
-	  }
-
-	  free(scan);
-	  scan = next;
-	}
-      }
-    }
-
-    free(send_seq_id_hash);
-  }
-
-  if(recv_seq_id_hash) {
-    int j = 0;
-
-    if(recv_seq_id_hash[j] != NULL) {
-      struct recv_hash_entry *next, *scan = recv_seq_id_hash[j];
-
-      while(scan != NULL) {
-	next = scan->next;
-	free(scan);
-	scan = next;
-      }
-    }
-
-    free(recv_seq_id_hash);
-  }
-
-  TwoFishDestroy(tf);
-}
-
-/* ************************************** */
-
 SOCKET open_socket(int local_port, int udp_sock, int server_mode) {
   SOCKET sock_fd;
   struct sockaddr_in local_address;
@@ -350,12 +262,12 @@ int connect_socket(int sock_fd, struct peer_addr* _dest) {
 
 /* *********************************************** */
 
-void send_packet(int sock, u_char is_udp_socket,
+void send_packet(n2n_sock_info_t * sinfo, 
 		 char *packet, size_t *packet_len,
 		 const struct peer_addr *remote_peer, u_int8_t compress_data) {
   int data_sent_len;
 
-  data_sent_len = unreliable_sendto(sock, is_udp_socket,
+  data_sent_len = unreliable_sendto(sinfo,
 				    packet, packet_len, remote_peer, compress_data);
 
   if(data_sent_len != *packet_len)
@@ -468,34 +380,20 @@ char* macaddr_str(const char *mac, char *buf, int buf_len) {
 
 /* *********************************************** */
 
-void fill_standard_header_fields(int sock, u_char is_udp_packet,
+void fill_standard_header_fields(n2n_sock_info_t * sinfo,
 				 struct n2n_packet_header *hdr, char *src_mac) {
   socklen_t len = sizeof(hdr->private_ip);
   memset(hdr, 0, N2N_PKT_HDR_SIZE);
   hdr->version = N2N_VERSION;
   hdr->crc = 0; // FIX
   if(src_mac != NULL) memcpy(hdr->src_mac, src_mac, 6);
-  getsockname(sock, (struct sockaddr*)&hdr->private_ip, &len);
+  getsockname(sinfo->sock, (struct sockaddr*)&hdr->private_ip, &len);
   hdr->public_ip.family = AF_INET;
 }
 
 /* *********************************************** */
 
-#if 0
-static u_int32_t hash_value(const u_int8_t *str, const u_int8_t str_len) {
-  u_int32_t hash = 0, i;
-
-  for(i = 0; i < str_len; i++) {
-    hash = str[i] + (hash << 6) + (hash << 16) - hash;
-  }
-
-  return(hash % SEND_SEQ_ID_HASH_LEN);
-}
-#endif
-
-/* *********************************************** */
-
-void send_ack(int sock_fd, u_char is_udp_socket,
+void send_ack(n2n_sock_info_t * sinfo,
 	      u_int16_t last_rcvd_seq_id,
 	      struct n2n_packet_header *header,
 	      struct peer_addr *remote_peer,
@@ -507,7 +405,7 @@ void send_ack(int sock_fd, u_char is_udp_socket,
   size_t len = sizeof(hdr);
   size_t len2;
 
-  fill_standard_header_fields(sock_fd, is_udp_socket, &hdr, src_mac);
+  fill_standard_header_fields(sinfo, &hdr, src_mac);
   hdr.msg_type = MSG_TYPE_ACK_RESPONSE;
   hdr.sequence_id = last_rcvd_seq_id;
   memcpy(hdr.community_name, header->community_name, COMMUNITY_LEN);
@@ -515,7 +413,7 @@ void send_ack(int sock_fd, u_char is_udp_socket,
   len2=marshall_n2n_packet_header( pkt, &hdr );
   assert( len2 == len );
 
-  send_packet(sock_fd, is_udp_socket, (char*)pkt, &len, remote_peer, 1);
+  send_packet(sinfo, (char*)pkt, &len, remote_peer, 1);
 }
 
 /* *********************************************** */
@@ -529,7 +427,7 @@ u_int8_t is_multi_broadcast(char *dest_mac) {
 
 /* http://www.faqs.org/rfcs/rfc908.html */
 
-u_int receive_data(int sock_fd, u_char is_udp_socket,
+u_int receive_data(n2n_sock_info_t * sinfo,
 		   char *packet, size_t packet_len,
 		   struct peer_addr *from, u_int8_t *discarded_pkt,
 		   char *tun_mac_addr, u_int8_t decompress_data,
@@ -542,16 +440,16 @@ u_int receive_data(int sock_fd, u_char is_udp_socket,
   ipstr_t ip_buf;
   ipstr_t from_ip_buf;
 
-  if(is_udp_socket) {
+  if(sinfo->is_udp_socket) {
     struct sockaddr_in _from;
-    len = recvfrom(sock_fd, packet, packet_len, 0, (struct sockaddr*)&_from, &fromlen);
+    len = recvfrom(sinfo->sock, packet, packet_len, 0, (struct sockaddr*)&_from, &fromlen);
     sockaddr_in2peer_addr(&_from, from);
   } else {
-    len = recv(sock_fd, packet, 4, 0);
+    len = recv(sinfo->sock, packet, 4, 0);
     if(len == 4) {
       packet[4] = '\0';
       len = atoi(packet);
-      len = recv(sock_fd, packet, len, 0);
+      len = recv(sinfo->sock, packet, len, 0);
     } else {
       traceEvent(TRACE_WARNING, "Unable to receive n2n packet length");
       return(-1);
@@ -671,49 +569,6 @@ static u_int32_t queue_packet(struct send_hash_entry *scan,
 
 /* *********************************************** */
 
-#if 0
-/* Used for sending packets out */
-static u_int32_t mac2sequence(u_int8_t *mac_addr, char *packet,
-			      u_int16_t packet_len) {
-  u_int32_t hash_idx;
-  u_int8_t is_dst_broad_multi_cast = ((!memcmp(broadcast_addr, mac_addr, 6))
-				      || (!memcmp(multicast_addr, mac_addr, 3))) ? 1 : 0;
-  struct send_hash_entry *scan;
-
-  if(is_dst_broad_multi_cast)
-    return(0);
-
-  hash_idx = hash_value(mac_addr, 6);
-
-  if(send_seq_id_hash[hash_idx] != NULL) {
-    scan = send_seq_id_hash[hash_idx];
-
-    if(memcmp(scan->mac_addr, mac_addr, 6) == 0) {
-      scan->last_seq_id++;
-      return(queue_packet(scan, packet, packet_len));
-    } else
-      scan = scan->next;
-  }
-
-  /* New entry */
-  scan = (struct send_hash_entry*)calloc(1, sizeof(struct send_hash_entry));
-
-  if(scan == NULL) {
-    traceEvent(TRACE_ERROR, "Not enough memory!");
-    return(0);
-  }
-
-  memcpy(scan->mac_addr, mac_addr, 6);
-  scan->last_seq_id = 0;
-  scan->next = send_seq_id_hash[hash_idx];
-  send_seq_id_hash[hash_idx] = scan;
-
-  return(queue_packet(scan, packet, packet_len));
-}
-#endif
-
-/* *********************************************** */
-
 /* Work-memory needed for compression. Allocate memory in units
  * of `lzo_align_t' (instead of `char') to make sure it is properly aligned.
  */
@@ -725,7 +580,7 @@ static HEAP_ALLOC(wrkmem,LZO1X_1_MEM_COMPRESS);
 
 /* ******************************************************* */
 
-u_int send_data(int sock_fd, u_char is_udp_socket,
+u_int send_data(n2n_sock_info_t * sinfo,
 		char *packet, size_t *packet_len,
 		const struct peer_addr *to, u_int8_t compress_data) {
   char compressed[1600];
@@ -752,34 +607,34 @@ u_int send_data(int sock_fd, u_char is_udp_socket,
     traceEvent(TRACE_INFO, "%u bytes compressed into %u", *packet_len, compressed_len);
     /* *packet_len = compressed_len; */
 
-    if(is_udp_socket) {
-      rc = sendto(sock_fd, compressed, compressed_len, 0,
+    if(sinfo->is_udp_socket) {
+      rc = sendto(sinfo->sock, compressed, compressed_len, 0,
 		  (struct sockaddr*)&destsock, sizeof(struct sockaddr_in));
     } else {
       char send_len[5];
 
       /* 4 bytes packet length */
       snprintf(send_len, sizeof(send_len), "%04d", (int)compressed_len);
-      if((rc = send(sock_fd, send_len, 4, 0)) != 4)
+      if((rc = send(sinfo->sock, send_len, 4, 0)) != 4)
 	return(-1);
-      if((rc = send(sock_fd, compressed, compressed_len, 0)) != compressed_len) {
+      if((rc = send(sinfo->sock, compressed, compressed_len, 0)) != compressed_len) {
 	traceEvent(TRACE_WARNING, "send error [%d][%s]",
 		   errno, strerror(errno));
       }
     }
   } else {
     compressed_len = *packet_len;
-    if(is_udp_socket)
-      rc = sendto(sock_fd, packet, compressed_len, 0,
+    if(sinfo->is_udp_socket)
+      rc = sendto(sinfo->sock, packet, compressed_len, 0,
 		  (struct sockaddr*)&destsock, sizeof(struct sockaddr_in));
     else {
       char send_len[5];
 
       /* 4 bytes packet length */
       snprintf(send_len, sizeof(send_len), "%04d", (int)compressed_len);
-      if((rc = send(sock_fd, send_len, 4, 0)) != 4)
+      if((rc = send(sinfo->sock, send_len, 4, 0)) != 4)
         return(-1);
-      rc = send(sock_fd, compressed, compressed_len, 0);
+      rc = send(sinfo->sock, compressed, compressed_len, 0);
     }
 
     if(rc == -1) {
@@ -803,7 +658,7 @@ u_int send_data(int sock_fd, u_char is_udp_socket,
 
 /* *********************************************** */
 
-u_int reliable_sendto(int sock_fd, u_char is_udp_socket,
+u_int reliable_sendto(n2n_sock_info_t * sinfo,
 		      char *packet, size_t *packet_len,
 		      const struct peer_addr *to, u_int8_t compress_data) {
   /*   char *payload = &packet[N2N_PKT_HDR_SIZE]; */
@@ -826,15 +681,14 @@ u_int reliable_sendto(int sock_fd, u_char is_udp_socket,
 
   marshall_n2n_packet_header( (u_int8_t *)packet, hdr );
 
-  return(send_data(sock_fd, is_udp_socket,
-                   packet, packet_len, to, compress_data));
+  return(send_data(sinfo, packet, packet_len, to, compress_data));
 }
 
 /* *********************************************** */
 
 /* unreliable_sendto is passed a fully marshalled, packet. Its purpose is to set
  * the unreliable flags but leave the rest of the packet untouched. */
-u_int unreliable_sendto(int sock_fd, u_char is_udp_socket,
+u_int unreliable_sendto(n2n_sock_info_t * sinfo,
 			char *packet, size_t *packet_len,
 			const struct peer_addr *to, u_int8_t compress_data) {
   struct n2n_packet_header hdr_storage;
@@ -855,8 +709,7 @@ u_int unreliable_sendto(int sock_fd, u_char is_udp_socket,
 
   marshall_n2n_packet_header( (u_int8_t *)packet, hdr );
 
-  return(send_data(sock_fd, is_udp_socket,
-		   packet, packet_len, to, compress_data));
+  return(send_data(sinfo, packet, packet_len, to, compress_data));
 }
 
 /* *********************************************** */

@@ -20,27 +20,97 @@
  *
  */
 
+#include "minilzo.h"
 #include "n2n.h"
 #include <assert.h>
 
 /** Time between logging system STATUS messages */
 #define STATUS_UPDATE_INTERVAL (30 * 60) /*secs*/
 
-static struct peer_addr supernode;
-static char *community_name = NULL, is_udp_sock = 1;
-u_int pkt_sent = 0;
-static tuntap_dev device;
-static int edge_sock_fd, allow_routing = 0;
+/* static struct peer_addr supernode; */
+/* static char *community_name = NULL, is_udp_sock = 1; */
+/* u_int pkt_sent = 0; */
+/* static tuntap_dev device; */
+/* static int edge_sock_fd, allow_routing = 0; */
 
-static void send_packet2net(int sock_fd, u_char is_udp_socket,
-			    char *decrypted_msg, size_t len,
-			    u_char allow_routed_packets); /* Forward */
+/* static char *encrypt_key = NULL; */
+/* static TWOFISH *tf; */
 
-char *encrypt_key = NULL;
+struct n2n_edge
+{
+    struct peer_addr    supernode;
+    char *              community_name /*= NULL*/;
 
-/* *********************************************** */
+/*     int                 sock; */
+/*     char                is_udp_socket /\*= 1*\/; */
+    n2n_sock_info_t     sinfo;
 
-static void readFromIPSocket();
+    u_int               pkt_sent /*= 0*/;
+    tuntap_dev          device;
+    int                 allow_routing /*= 0*/;
+
+    char *              encrypt_key /* = NULL*/;
+    TWOFISH *           tf;
+
+    struct peer_info *  known_peers /* = NULL*/;
+    struct peer_info *  pending_peers /* = NULL*/;
+    time_t              last_register /* = 0*/;
+};
+
+static void send_packet2net(n2n_edge_t * eee,
+			    char *decrypted_msg, size_t len);
+
+/* ************************************** */
+
+static int edge_init(n2n_edge_t * eee) {
+#ifdef WIN32
+  initWin32();
+#endif
+
+  eee->community_name=NULL;
+  eee->sinfo.sock= -1;
+  eee->sinfo.is_udp_socket=1;
+  eee->pkt_sent=0;
+  eee->allow_routing=0;
+  eee->encrypt_key=NULL;
+  eee->tf = NULL;
+  eee->known_peers=NULL;
+  eee->pending_peers=NULL;
+  eee->last_register=0;
+
+  if(lzo_init() != LZO_E_OK) {
+    traceEvent(TRACE_ERROR, "LZO compression error");
+    return(-1);
+  }
+
+  return(0);
+}
+
+static int edge_init_twofish( n2n_edge_t * eee, u_int8_t *encrypt_pwd, u_int32_t encrypt_pwd_len )
+{
+    eee->tf = TwoFishInit(encrypt_pwd, encrypt_pwd_len);
+
+    if ( eee->tf )
+    {
+        return 0;
+    }
+    else
+    {
+        return 1;
+    }
+}
+
+/* ************************************** */
+
+static void edge_deinit(n2n_edge_t * eee) {
+  TwoFishDestroy(eee->tf);
+  if ( eee->sinfo.sock >=0 )
+  {
+      close( eee->sinfo.sock );
+  }
+}
+
+static void readFromIPSocket( n2n_edge_t * eee );
 
 static void help() {
   print_n2n_version();
@@ -90,14 +160,8 @@ static void help() {
 
 /* *********************************************** */
 
-static struct peer_info *known_peers = NULL;
-static struct peer_info *pending_peers = NULL;
-static time_t last_register = 0;
 
-
-/* *********************************************** */
-
-static void send_register(int sock, u_char is_udp_socket,
+static void send_register( n2n_edge_t * eee,
 			  const struct peer_addr *remote_peer,
 			  u_char is_ack) {
   struct n2n_packet_header hdr;
@@ -105,13 +169,13 @@ static void send_register(int sock, u_char is_udp_socket,
   size_t len = sizeof(hdr);
   ipstr_t ip_buf;
 
-  fill_standard_header_fields(sock, is_udp_socket, &hdr, (char*)device.mac_addr);
+  fill_standard_header_fields( &(eee->sinfo), &hdr, (char*)(eee->device.mac_addr));
   hdr.sent_by_supernode = 0;
   hdr.msg_type = (is_ack == 0) ? MSG_TYPE_REGISTER : MSG_TYPE_REGISTER_ACK;
-  memcpy(hdr.community_name, community_name, COMMUNITY_LEN);
+  memcpy(hdr.community_name, eee->community_name, COMMUNITY_LEN);
 
   marshall_n2n_packet_header( (u_int8_t *)pkt, &hdr );
-  send_packet(sock, is_udp_socket, pkt, &len, remote_peer, 1);
+  send_packet( &(eee->sinfo), pkt, &len, remote_peer, 1 );
 
   traceEvent(TRACE_INFO, "Sent %s message to %s:%d",
              ((hdr.msg_type==MSG_TYPE_REGISTER)?"MSG_TYPE_REGISTER":"MSG_TYPE_REGISTER_ACK"),
@@ -121,24 +185,24 @@ static void send_register(int sock, u_char is_udp_socket,
 
 /* *********************************************** */
 
-static void send_deregister(int sock, u_char is_udp_socket,
+static void send_deregister(n2n_edge_t * eee,
 			    struct peer_addr *remote_peer) {
   struct n2n_packet_header hdr;
   char pkt[N2N_PKT_HDR_SIZE];
   size_t len = sizeof(hdr);
 
-  fill_standard_header_fields(sock, is_udp_socket,&hdr, (char*)device.mac_addr);
+  fill_standard_header_fields( &(eee->sinfo), &hdr, (char*)(eee->device.mac_addr) );
   hdr.sent_by_supernode = 0;
   hdr.msg_type = MSG_TYPE_DEREGISTER;
-  memcpy(hdr.community_name, community_name, COMMUNITY_LEN);
+  memcpy(hdr.community_name, eee->community_name, COMMUNITY_LEN);
 
   marshall_n2n_packet_header( (u_int8_t *)pkt, &hdr );
-  send_packet(sock, is_udp_socket, pkt, &len, remote_peer, 1);
+  send_packet( &(eee->sinfo), pkt, &len, remote_peer, 1);
 }
 
 /* *********************************************** */
 
-static void update_peer_address(int sock_fd, u_char is_udp_socket,
+static void update_peer_address(n2n_edge_t * eee,
                                 const struct n2n_packet_header * hdr,
                                 time_t when);
 void trace_registrations( struct peer_info * scan );
@@ -148,13 +212,11 @@ struct peer_info * find_peer_by_mac( struct peer_info * list,
 void peer_list_add( struct peer_info * * list,
                     struct peer_info * new );
 size_t peer_list_size( const struct peer_info * list );
-void check_peer( int sock,
-                 u_char is_udp_socket,
+void check_peer( n2n_edge_t * eee,
                  const struct n2n_packet_header * hdr );
-void try_send_register( int sock,
-                        u_char is_up_socket,
+void try_send_register( n2n_edge_t * eee,
                         const struct n2n_packet_header * hdr );
-void set_peer_operational( const struct n2n_packet_header * hdr );
+void set_peer_operational( n2n_edge_t * eee, const struct n2n_packet_header * hdr );
 
 
 
@@ -171,14 +233,13 @@ void set_peer_operational( const struct n2n_packet_header * hdr );
  *
  *  Called from the main loop when Rx a packet for our device mac.
  */
-void try_send_register( int sock,
-                        u_char is_udp_socket,
+void try_send_register( n2n_edge_t * eee,
                         const struct n2n_packet_header * hdr )
 {
   ipstr_t ip_buf;
 
   /* REVISIT: purge of pending_peers not yet done. */
-  struct peer_info * scan = find_peer_by_mac( pending_peers, hdr->src_mac );
+  struct peer_info * scan = find_peer_by_mac( eee->pending_peers, hdr->src_mac );
 
   if ( NULL == scan )
     {
@@ -188,16 +249,16 @@ void try_send_register( int sock,
       scan->public_ip = hdr->public_ip;
       scan->last_seen = time(NULL); /* Don't change this it marks the pending peer for removal. */
 
-      peer_list_add( &pending_peers, scan );
+      peer_list_add( &(eee->pending_peers), scan );
 
       traceEvent( TRACE_NORMAL, "Pending peers list size=%ld",
-		  peer_list_size( pending_peers ) );
+		  peer_list_size( eee->pending_peers ) );
 
       traceEvent( TRACE_NORMAL, "Sending REGISTER request to %s:%d",
 		  intoa(ntohl(scan->public_ip.addr_type.v4_addr), ip_buf, sizeof(ip_buf)),
 		  ntohs(scan->public_ip.port));
 
-      send_register(sock, is_udp_socket,
+      send_register(eee,
 		    &(scan->public_ip),
 		    0 /* is not ACK */ );
 
@@ -217,7 +278,7 @@ void try_send_register( int sock,
 		      ntohs(scan->public_ip.port));
 
 
-	  send_register(sock, is_udp_socket,
+	  send_register(eee,
 			&(scan->public_ip),
 			0 /* is not ACK */ );
         }
@@ -226,21 +287,20 @@ void try_send_register( int sock,
 
 
 /** Update the last_seen time for this peer, or get registered. */
-void check_peer( int sock,
-                 u_char is_udp_socket,
+void check_peer( n2n_edge_t * eee,
                  const struct n2n_packet_header * hdr )
 {
-  struct peer_info * scan = find_peer_by_mac( known_peers, hdr->src_mac );
+  struct peer_info * scan = find_peer_by_mac( eee->known_peers, hdr->src_mac );
 
   if ( NULL == scan )
     {
       /* Not in known_peers - start the REGISTER process. */
-      try_send_register( sock, is_udp_socket, hdr );
+      try_send_register( eee, hdr );
     }
   else
     {
       /* Already in known_peers. */
-      update_peer_address( edge_sock_fd, is_udp_sock, hdr, time(NULL) );
+      update_peer_address( eee, hdr, time(NULL) );
     }
 }
 
@@ -251,14 +311,14 @@ void check_peer( int sock,
  *
  * Called by main loop when Rx a REGISTER_ACK.
  */
-void set_peer_operational( const struct n2n_packet_header * hdr )
+void set_peer_operational( n2n_edge_t * eee, const struct n2n_packet_header * hdr )
 {
   struct peer_info * prev = NULL;
   struct peer_info * scan;
   macstr_t mac_buf;
   ipstr_t ip_buf;
 
-  scan=pending_peers;
+  scan=eee->pending_peers;
 
   while ( NULL != scan )
     {
@@ -281,12 +341,12 @@ void set_peer_operational( const struct n2n_packet_header * hdr )
         }
       else
         {
-	  pending_peers = scan->next;
+	  eee->pending_peers = scan->next;
         }
 
       /* Add scan to known_peers. */
-      scan->next = known_peers;
-      known_peers = scan;
+      scan->next = eee->known_peers;
+      eee->known_peers = scan;
 
       scan->public_ip = hdr->public_ip;
 
@@ -296,10 +356,10 @@ void set_peer_operational( const struct n2n_packet_header * hdr )
 		 ntohs(scan->public_ip.port));
 
       traceEvent( TRACE_NORMAL, "Pending peers list size=%ld",
-		  peer_list_size( pending_peers ) );
+		  peer_list_size( eee->pending_peers ) );
 
       traceEvent( TRACE_NORMAL, "Operational peers list size=%ld",
-		  peer_list_size( known_peers ) );
+		  peer_list_size( eee->known_peers ) );
 
 
       scan->last_seen = time(NULL);
@@ -338,12 +398,12 @@ u_int8_t broadcast_mac[6] = { 0xff, 0xff, 0xff, 0xff, 0xff, 0xff };
  *  - if the public_ip socket has changed, erase the entry
  *  - if the same, update its last_seen = when
  */
-static void update_peer_address(int sock_fd, u_char is_udp_socket,
+static void update_peer_address(n2n_edge_t * eee,
                                 const struct n2n_packet_header * hdr,
                                 time_t when)
 {
   ipstr_t ip_buf;
-  struct peer_info *scan = known_peers;
+  struct peer_info *scan = eee->known_peers;
   struct peer_info *prev = NULL; /* use to remove bad registrations. */
 
   if ( 0 == hdr->public_ip.addr_type.v4_addr )
@@ -389,7 +449,7 @@ static void update_peer_address(int sock_fd, u_char is_udp_socket,
 	  if ( NULL == prev )
             {
 	      /* scan was head of list */
-	      known_peers = scan->next;
+	      eee->known_peers = scan->next;
             }
 	  else
             {
@@ -397,7 +457,7 @@ static void update_peer_address(int sock_fd, u_char is_udp_socket,
             }
 	  free(scan);
 
-	  try_send_register( sock_fd, is_udp_socket, hdr );
+	  try_send_register( eee, hdr );
         }
       else
         {
@@ -447,14 +507,14 @@ static int build_gratuitous_arp(char *buffer, u_short buffer_len) {
 
 /** Called from update_registrations to periodically send gratuitous ARP
  * broadcasts. */
-static void send_grat_arps(int sock_fd, u_char is_udp_socket) {
+static void send_grat_arps(n2n_edge_t * eee,) {
   char buffer[48];
   size_t len;
 
   traceEvent(TRACE_NORMAL, "Sending gratuitous ARP...");
   len = build_gratuitous_arp(buffer, sizeof(buffer));
-  send_packet2net(sock_fd, is_udp_socket, buffer, len, allow_routing);
-  send_packet2net(sock_fd, is_udp_socket, buffer, len, allow_routing); /* Two is better than one :-) */
+  send_packet2net(eee, buffer, len);
+  send_packet2net(eee, buffer, len); /* Two is better than one :-) */
 }
 #endif /* #if defined(DUMMY_ID_00001) */
 
@@ -468,19 +528,19 @@ static void send_grat_arps(int sock_fd, u_char is_udp_socket) {
  *  This is periodically called by the main loop. The list of registrations is
  *  not modified. Registration packets may be sent.
  */
-static void update_registrations(int sock_fd, u_char is_udp_socket) {
+static void update_registrations( n2n_edge_t * eee ) {
   /* REVISIT: BbMaj7: have shorter timeout to REGISTER to supernode if this has
    * not yet succeeded. */
 
-  if(time(NULL) < (last_register+REGISTER_FREQUENCY)) return; /* Too early */
+  if(time(NULL) < (eee->last_register+REGISTER_FREQUENCY)) return; /* Too early */
 
   traceEvent(TRACE_NORMAL, "Registering with supernode");
-  send_register(sock_fd, is_udp_socket, &supernode, 0); /* Register with supernode */
+  send_register(eee, &(eee->supernode), 0); /* Register with supernode */
 
   /* REVISIT: turn-on gratuitous ARP with config option. */
   /* send_grat_arps(sock_fd, is_udp_sock); */
 
-  last_register = time(NULL);
+  eee->last_register = time(NULL);
 }
 
 /* ***************************************************** */
@@ -536,8 +596,10 @@ void peer_list_add( struct peer_info * * list,
 }
 
 
-static int find_peer_destination(const u_char *mac_address, struct peer_addr *destination) {
-  const struct peer_info *scan = known_peers;
+static int find_peer_destination(n2n_edge_t * eee, 
+                                 const u_char *mac_address, 
+                                 struct peer_addr *destination) {
+  const struct peer_info *scan = eee->known_peers;
   macstr_t mac_buf;
   ipstr_t ip_buf;
   int retval=0;
@@ -565,7 +627,7 @@ static int find_peer_destination(const u_char *mac_address, struct peer_addr *de
 
   if ( 0 == retval )
     {
-      memcpy(destination, &supernode, sizeof(struct sockaddr_in));
+        memcpy(destination, &(eee->supernode), sizeof(struct sockaddr_in));
     }
 
   traceEvent(TRACE_INFO, "find_peer_address(%s) -> [socket=%s:%d]",
@@ -595,9 +657,8 @@ static const struct option long_options[] = {
 
 
 /** A layer-2 packet was received at the tunnel and needs to be sent via UDP. */
-static void send_packet2net(int sock_fd, u_char is_udp_socket,
-			    char *decrypted_msg, size_t len,
-			    u_char allow_routed_packets) {
+static void send_packet2net(n2n_edge_t * eee,
+			    char *decrypted_msg, size_t len) {
   ipstr_t ip_buf;
   char packet[2048];
   int data_sent_len;
@@ -608,7 +669,7 @@ static void send_packet2net(int sock_fd, u_char is_udp_socket,
   struct ether_header *eh = (struct ether_header*)decrypted_msg;
 
   /* Discard IP packets that are not originated by this hosts */
-  if(!allow_routed_packets) {
+  if(!(eee->allow_routing)) {
     if(ntohs(eh->ether_type) == 0x0800) {
 
       /* This is an IP packet from the local source address - not forwarded. */
@@ -617,7 +678,7 @@ static void send_packet2net(int sock_fd, u_char is_udp_socket,
 #define IP4_ADDRSIZE  4
       /* Note: all elements of the_ip are in network order */
       if( 0 != memcmp( decrypted_msg + ETH_FRAMESIZE + IP4_SRCOFFSET, 
-                       &(device.ip_addr), 
+                       &(eee->device.ip_addr), 
                        IP4_ADDRSIZE ) ) {
 	/* This is a packet that needs to be routed */
 	traceEvent(TRACE_INFO, "Discarding routed packet");
@@ -631,21 +692,20 @@ static void send_packet2net(int sock_fd, u_char is_udp_socket,
 
   /* Encrypt "decrypted_msg" into the second half of the n2n packet. */
   len = TwoFishEncryptRaw((u_int8_t *)decrypted_msg,
-			  (u_int8_t *)&packet[N2N_PKT_HDR_SIZE], len, tf);
+			  (u_int8_t *)&packet[N2N_PKT_HDR_SIZE], len, eee->tf);
 
   /* Add the n2n header to the start of the n2n packet. */
-  fill_standard_header_fields(sock_fd, is_udp_socket,
-			      &hdr, (char*)device.mac_addr);
+  fill_standard_header_fields( &(eee->sinfo), &hdr, (char*)(eee->device.mac_addr) );
   hdr.msg_type = MSG_TYPE_PACKET;
   hdr.sent_by_supernode = 0;
-  memcpy(hdr.community_name, community_name, COMMUNITY_LEN);
+  memcpy(hdr.community_name, eee->community_name, COMMUNITY_LEN);
   memcpy(hdr.dst_mac, decrypted_msg, 6);
 
   marshall_n2n_packet_header( (u_int8_t *)packet, &hdr );
 
   len += N2N_PKT_HDR_SIZE;
 
-  if(find_peer_destination(eh->ether_dhost, &destination))
+  if(find_peer_destination(eee, eh->ether_dhost, &destination))
     traceEvent(TRACE_INFO, "** Going direct [dst_mac=%s][dest=%s:%d]",
 	       macaddr_str((char*)eh->ether_dhost, mac_buf, sizeof(mac_buf)),
 	       intoa(ntohl(destination.addr_type.v4_addr), ip_buf, sizeof(ip_buf)),
@@ -655,13 +715,13 @@ static void send_packet2net(int sock_fd, u_char is_udp_socket,
 	       macaddr_str((char*)eh->ether_shost, mac_buf, sizeof(mac_buf)),
 	       macaddr_str((char*)eh->ether_dhost, mac2_buf, sizeof(mac2_buf)));
 
-  data_sent_len = reliable_sendto(sock_fd, is_udp_socket, packet, &len, &destination, 1);
+  data_sent_len = reliable_sendto( &(eee->sinfo), packet, &len, &destination, 1);
 
   if(data_sent_len != len)
     traceEvent(TRACE_WARNING, "sendto() [sent=%d][attempted_to_send=%d] [%s]\n",
 	       data_sent_len, len, strerror(errno));
   else {
-    pkt_sent++;
+    ++(eee->pkt_sent);
     traceEvent(TRACE_INFO, "Sent %d byte MSG_TYPE_PACKET ok", data_sent_len);
   }
 }
@@ -693,16 +753,16 @@ int is_ip6_discovery( const void * buf, size_t bufsize )
  * Return: 0 = ok, -1 = invalid packet
  *
  */
-static int check_received_packet(tuntap_dev *dev, char *pkt,
-				 u_int pkt_len, u_char allow_routed_packets) {
+static int check_received_packet(n2n_edge_t * eee, char *pkt,
+				 u_int pkt_len) {
 
   if(pkt_len == 42) {
     /* ARP */
     if((pkt[12] != 0x08) || (pkt[13] != 0x06)) return(0); /* No ARP */
     if((pkt[20] != 0x00) || (pkt[21] != 0x02)) return(0); /* No ARP Reply */
-    if(memcmp(&pkt[28], &device.ip_addr, 4))   return(0); /* This is not me */
+    if(memcmp(&pkt[28], &(eee->device.ip_addr), 4))   return(0); /* This is not me */
 
-    if(memcmp(dev->mac_addr, &pkt[22], 6) == 0) {
+    if(memcmp(eee->device.mac_addr, &pkt[22], 6) == 0) {
       traceEvent(TRACE_WARNING, "Bounced packet received: supernode bug?");
       return(0);
     }
@@ -720,8 +780,8 @@ static int check_received_packet(tuntap_dev *dev, char *pkt,
       /* Note: all elements of the_ip are in network order */
       struct ip *the_ip = (struct ip*)(pkt+sizeof(struct ether_header));
 
-      if((the_ip->ip_dst.s_addr != device.ip_addr)
-	 && ((the_ip->ip_dst.s_addr & device.device_mask) != (device.ip_addr & device.device_mask))) /* Not a broadcast */
+      if((the_ip->ip_dst.s_addr != eee->device.ip_addr)
+	 && ((the_ip->ip_dst.s_addr & eee->device.device_mask) != (eee->device.ip_addr & eee->device.device_mask))) /* Not a broadcast */
 	{
           ipstr_t ip_buf;
           ipstr_t ip_buf2;
@@ -729,7 +789,7 @@ static int check_received_packet(tuntap_dev *dev, char *pkt,
 	  /* This is a packet that needs to be routed */
 	  traceEvent(TRACE_INFO, "Discarding routed packet [rcvd=%s][expected=%s]",
 		     intoa(ntohl(the_ip->ip_dst.s_addr), ip_buf, sizeof(ip_buf)),
-		     intoa(ntohl(device.ip_addr), ip_buf2, sizeof(ip_buf2)));
+		     intoa(ntohl(eee->device.ip_addr), ip_buf2, sizeof(ip_buf2)));
 	} else {
 	/* This packet is for us */
 
@@ -752,13 +812,13 @@ static int check_received_packet(tuntap_dev *dev, char *pkt,
  *
  *  REVISIT: fails if more than one packet is waiting to be read.
  */
-static void readFromTAPSocket()
+static void readFromTAPSocket( n2n_edge_t * eee )
 {
   /* tun -> remote */
   u_char decrypted_msg[2048];
   size_t len;
 
-  len = tuntap_read(&device, decrypted_msg, sizeof(decrypted_msg));
+  len = tuntap_read(&(eee->device), decrypted_msg, sizeof(decrypted_msg));
 
   if((len <= 0) || (len > sizeof(decrypted_msg)))
     traceEvent(TRACE_WARNING, "read()=%d [%d/%s]\n",
@@ -769,8 +829,7 @@ static void readFromTAPSocket()
     if ( is_ip6_discovery( decrypted_msg, len ) ) {
       traceEvent(TRACE_WARNING, "Dropping unsupported IPv6 neighbour discovery packet");
     } else {
-      send_packet2net(edge_sock_fd, is_udp_sock, (char*)decrypted_msg,
-		      len, allow_routing);
+      send_packet2net(eee, (char*)decrypted_msg, len);
     }
   }
 }
@@ -778,7 +837,7 @@ static void readFromTAPSocket()
 /* ***************************************************** */
 
 
-void readFromIPSocket()
+void readFromIPSocket( n2n_edge_t * eee )
 {
   ipstr_t ip_buf;
   macstr_t mac_buf;
@@ -791,8 +850,8 @@ void readFromIPSocket()
   u_int8_t discarded_pkt;
   struct n2n_packet_header hdr_storage;
 
-  len = receive_data(edge_sock_fd, is_udp_sock, packet, sizeof(packet), &sender,
-		     &discarded_pkt, (char*)device.mac_addr, 1, &hdr_storage);
+  len = receive_data( &(eee->sinfo), packet, sizeof(packet), &sender,
+                      &discarded_pkt, (char*)(eee->device.mac_addr), 1, &hdr_storage);
 
   if(len <= 0) return;
 
@@ -832,12 +891,12 @@ void readFromIPSocket()
 	  hdr->public_ip.family = AF_INET;
 	}
 
-	if(strncmp(hdr->community_name, community_name, COMMUNITY_LEN) != 0) {
+	if(strncmp(hdr->community_name, eee->community_name, COMMUNITY_LEN) != 0) {
 	  traceEvent(TRACE_WARNING, "Received packet with invalid community [expected=%s][received=%s]\n",
-		     community_name, hdr->community_name);
+		     eee->community_name, hdr->community_name);
 	} else {
 	  if(hdr->msg_type == MSG_TYPE_PACKET) {
-	    if(memcmp(hdr->dst_mac, device.mac_addr, 6)
+	    if(memcmp(hdr->dst_mac, eee->device.mac_addr, 6)
 	       && (!is_multi_broadcast(hdr->dst_mac))) {
 	      traceEvent(TRACE_WARNING, "Received packet with invalid mac address %s: discarded\n",
 			 macaddr_str(hdr->dst_mac, mac_buf, sizeof(mac_buf)));
@@ -850,17 +909,17 @@ void readFromIPSocket()
 
 	    /* Decrypt message first */
 	    len = TwoFishDecryptRaw((u_int8_t *)&packet[N2N_PKT_HDR_SIZE],
-				    (u_int8_t *)decrypted_msg, len, tf);
+				    (u_int8_t *)decrypted_msg, len, eee->tf);
 
 	    if(len > 0) {
-	      if(check_received_packet(&device, decrypted_msg, len, allow_routing) == 0) {
+                if(check_received_packet(eee, decrypted_msg, len) == 0) {
 
-		if ( 0 == memcmp(hdr->dst_mac, device.mac_addr, 6) )
+		if ( 0 == memcmp(hdr->dst_mac, eee->device.mac_addr, 6) )
 		  {
-		    check_peer( edge_sock_fd, is_udp_sock, hdr );
+		    check_peer( eee, hdr );
 		  }
 
-		data_sent_len = tuntap_write(&device, (u_char*)decrypted_msg, len);
+		data_sent_len = tuntap_write(&(eee->device), (u_char*)decrypted_msg, len);
 
 		if(data_sent_len != len)
 		  traceEvent(TRACE_WARNING, "tuntap_write() [sent=%d][attempted_to_send=%d] [%s]\n",
@@ -879,19 +938,19 @@ void readFromIPSocket()
 	    traceEvent(TRACE_INFO, "Received registration request from remote peer [ip=%s:%d]",
 		       intoa(ntohl(hdr->public_ip.addr_type.v4_addr), ip_buf, sizeof(ip_buf)),
 		       ntohs(hdr->public_ip.port));
-	    if ( 0 == memcmp(hdr->dst_mac, device.mac_addr, 6) )
+	    if ( 0 == memcmp(hdr->dst_mac, (eee->device.mac_addr), 6) )
 	      {
-		check_peer( edge_sock_fd, is_udp_sock, hdr );
+		check_peer( eee, hdr );
 	      }
 
 
-	    send_register(edge_sock_fd, is_udp_sock, &hdr->public_ip, 1); /* Send ACK back */
+	    send_register(eee, &hdr->public_ip, 1); /* Send ACK back */
 	  } else if(hdr->msg_type == MSG_TYPE_REGISTER_ACK) {
 	    traceEvent(TRACE_NORMAL, "Received REGISTER_ACK from remote peer [ip=%s:%d]",
 		       intoa(ntohl(hdr->public_ip.addr_type.v4_addr), ip_buf, sizeof(ip_buf)),
 		       ntohs(hdr->public_ip.port));
 
-	    /* if ( 0 == memcmp(hdr->dst_mac, device.mac_addr, 6) ) */
+	    /* if ( 0 == memcmp(hdr->dst_mac, eee->device.mac_addr, 6) ) */
 	    {
                 if ( hdr->sent_by_supernode )
                 {
@@ -900,7 +959,7 @@ void readFromIPSocket()
                 else
                 {
                     /* Move from pending_peers to known_peers; ignore if not in pending. */
-                    set_peer_operational( hdr );
+                    set_peer_operational( eee, hdr );
                 }
 	    }
 
@@ -944,7 +1003,7 @@ static void startTunReadThread() {
 
 /* ***************************************************** */
 
-static void supernode2addr(char* addr) {
+static void supernode2addr(n2n_edge_t * eee, char* addr) {
 	char *supernode_host = strtok(addr, ":");
 
 	if(supernode_host) {
@@ -954,7 +1013,7 @@ static void supernode2addr(char* addr) {
 		int nameerr;
 
 		if ( supernode_port )
-			supernode.port = htons(atoi(supernode_port));
+			eee->supernode.port = htons(atoi(supernode_port));
 		else
 			traceEvent(TRACE_WARNING, "Bad supernode parameter (-l <host:port>)");
 
@@ -970,7 +1029,7 @@ static void supernode2addr(char* addr) {
 				/* It is definitely and IPv4 address -> sockaddr_in */
 				saddr = (struct sockaddr_in *)ainfo->ai_addr;
 
-				supernode.addr_type.v4_addr = saddr->sin_addr.s_addr;
+				eee->supernode.addr_type.v4_addr = saddr->sin_addr.s_addr;
 			}
 			else
 			{
@@ -982,7 +1041,7 @@ static void supernode2addr(char* addr) {
 			ainfo = NULL;
 		} else {
 			traceEvent(TRACE_WARNING, "Failed to resolve supernode host %s, assuming numeric", supernode_host);
-			supernode.addr_type.v4_addr = inet_addr(supernode_host);
+			eee->supernode.addr_type.v4_addr = inet_addr(supernode_host);
 		}
 	} else
 		traceEvent(TRACE_WARNING, "Wrong supernode parameter (-l <host:port>)");
@@ -1008,6 +1067,14 @@ int main(int argc, char* argv[]) {
   time_t lastStatus=0;
 
   char * device_mac=NULL;
+  char * encrypt_key;
+
+  n2n_edge_t eee; /* single instance for this program */
+
+  if (-1 == edge_init(&eee) ){
+      traceEvent( TRACE_ERROR, "Failed in edge_init" );
+      exit(1);
+  }
 
   if( getenv( "N2N_KEY" )) {
     encrypt_key = strdup( getenv( "N2N_KEY" ));
@@ -1016,8 +1083,8 @@ int main(int argc, char* argv[]) {
 #ifdef WIN32
   tuntap_dev_name = "";
 #endif
-  memset(&supernode, 0, sizeof(supernode));
-  supernode.family = AF_INET;
+  memset(&(eee.supernode), 0, sizeof(eee.supernode));
+  eee.supernode.family = AF_INET;
 
   optarg = NULL;
   while((opt = getopt_long(argc, argv, "k:a:c:u:g:m:d:l:p:fvhrt", long_options, NULL)) != EOF) {
@@ -1026,9 +1093,9 @@ int main(int argc, char* argv[]) {
       ip_addr = strdup(optarg);
       break;
     case 'c': /* community */
-      community_name = strdup(optarg);
-      if(strlen(community_name) > COMMUNITY_LEN)
-	community_name[COMMUNITY_LEN] = '\0';
+      eee.community_name = strdup(optarg);
+      if(strlen(eee.community_name) > COMMUNITY_LEN)
+	eee.community_name[COMMUNITY_LEN] = '\0';
       break;
 #ifndef WIN32
 
@@ -1057,18 +1124,18 @@ int main(int argc, char* argv[]) {
       encrypt_key = strdup(optarg);
       break;
     case 'r': /* enable packet routing across n2n endpoints */
-      allow_routing = 1;
+      eee.allow_routing = 1;
       break;
     case 'l': /* supernode-list */
-	  supernode2addr(optarg); 
-	  break;
+      supernode2addr(&eee,optarg); 
+      break;
 #ifdef __linux__
     case 'd': /* tun-device */
       tuntap_dev_name = strdup(optarg);
       break;
 #endif
     case 't': /* Use HTTP tunneling */
-      is_udp_sock = 0;
+      eee.sinfo.is_udp_socket = 0;
       break;
     case 'p':
       local_port = atoi(optarg);
@@ -1086,9 +1153,9 @@ int main(int argc, char* argv[]) {
 #ifdef __linux__
        tuntap_dev_name &&
 #endif
-       community_name &&
+       eee.community_name &&
        ip_addr &&
-       supernode.addr_type.v4_addr &&
+       eee.supernode.addr_type.v4_addr &&
        encrypt_key))
     help();
 
@@ -1098,7 +1165,7 @@ int main(int argc, char* argv[]) {
   /* setgid( 0 ); */
 #endif
 
-  if(tuntap_open(&device, tuntap_dev_name, ip_addr, "255.255.255.0", device_mac ) < 0)
+  if(tuntap_open(&(eee.device), tuntap_dev_name, ip_addr, "255.255.255.0", device_mac ) < 0)
     return(-1);
 
 #ifndef WIN32
@@ -1112,18 +1179,18 @@ int main(int argc, char* argv[]) {
 #endif
 
   traceEvent(TRACE_NORMAL, "Using supernode %s:%d",
-	     intoa(ntohl(supernode.addr_type.v4_addr), ip_buf, sizeof(ip_buf)),
-	     ntohs(supernode.port));
+	     intoa(ntohl(eee.supernode.addr_type.v4_addr), ip_buf, sizeof(ip_buf)),
+	     ntohs(eee.supernode.port));
 
   if(local_port > 0)
     traceEvent(TRACE_NORMAL, "Binding to local port %d", local_port);
 
-  if(init_n2n( (u_int8_t *)encrypt_key, strlen(encrypt_key) ) < 0) return(-1);
-  edge_sock_fd = open_socket(local_port, is_udp_sock, 0);
-  if(edge_sock_fd < 0) return(-1);
+  if(edge_init_twofish( &eee, (u_int8_t *)(encrypt_key), strlen(encrypt_key) ) < 0) return(-1);
+  eee.sinfo.sock = open_socket(local_port, eee.sinfo.is_udp_socket, 0);
+  if(eee.sinfo.sock < 0) return(-1);
 
-  if(!is_udp_sock) {
-    int rc = connect_socket(edge_sock_fd, &supernode);
+  if( !(eee.sinfo.is_udp_socket) ) {
+      int rc = connect_socket(eee.sinfo.sock, &(eee.supernode));
 
     if(rc == -1) {
       traceEvent(TRACE_WARNING, "Error while connecting to supernode\n");
@@ -1139,13 +1206,13 @@ int main(int argc, char* argv[]) {
   }
 #endif
   
-  update_registrations(edge_sock_fd, is_udp_sock);
+  update_registrations(&eee);
 
   traceEvent(TRACE_NORMAL, "");
   traceEvent(TRACE_NORMAL, "Ready");
 
 #ifdef WIN32
-  startTunReadThread();
+  startTunReadThread(eee);
 #endif
 
   /* Main loop
@@ -1162,10 +1229,10 @@ int main(int argc, char* argv[]) {
     time_t nowTime;
 
     FD_ZERO(&socket_mask);
-    FD_SET(edge_sock_fd, &socket_mask);
+    FD_SET(eee.sinfo.sock, &socket_mask);
 #ifndef WIN32
-    FD_SET(device.fd, &socket_mask);
-    max_sock = max( edge_sock_fd, device.fd );
+    FD_SET(eee.device.fd, &socket_mask);
+    max_sock = max( eee.sinfo.sock, eee.device.fd );
 #endif
 
     wait_time.tv_sec = SOCKET_TIMEOUT_INTERVAL_SECS; wait_time.tv_usec = 0;
@@ -1177,31 +1244,31 @@ int main(int argc, char* argv[]) {
       {
         /* Any or all of the FDs could have input; check them all. */
 
-        if(FD_ISSET(edge_sock_fd, &socket_mask))
+        if(FD_ISSET(eee.sinfo.sock, &socket_mask))
 	  {
             /* Read a cooked socket from the internet socket. Writes on the TAP
              * socket. */
-            readFromIPSocket();
+            readFromIPSocket(&eee);
 	  }
 
 #ifndef WIN32
-        if(FD_ISSET(device.fd, &socket_mask))
+        if(FD_ISSET(eee.device.fd, &socket_mask))
 	  {
             /* Read an ethernet frame from the TAP socket. Write on the IP
              * socket. */
-            readFromTAPSocket();
+            readFromTAPSocket(&eee);
 	  }
 #endif
       }
 
-    update_registrations(edge_sock_fd, is_udp_sock);
+    update_registrations(&eee);
 
-    numPurged =  purge_expired_registrations( &known_peers );
-    numPurged += purge_expired_registrations( &pending_peers );
+    numPurged =  purge_expired_registrations( &(eee.known_peers) );
+    numPurged += purge_expired_registrations( &(eee.pending_peers) );
     if ( numPurged > 0 )
       {
         traceEvent( TRACE_NORMAL, "Peer removed: pending=%ld, operational=%ld",
-                    peer_list_size( pending_peers ), peer_list_size( known_peers ) );
+                    peer_list_size( eee.pending_peers ), peer_list_size( eee.known_peers ) );
       }
 
     if ( ( nowTime - lastStatus ) > STATUS_UPDATE_INTERVAL )
@@ -1209,14 +1276,16 @@ int main(int argc, char* argv[]) {
         lastStatus = nowTime;
 
         traceEvent( TRACE_NORMAL, "STATUS: pending=%ld, operational=%ld",
-                    peer_list_size( pending_peers ), peer_list_size( known_peers ) );
+                    peer_list_size( eee.pending_peers ), peer_list_size( eee.known_peers ) );
       }
   } /* while */
 
-  send_deregister(edge_sock_fd, is_udp_sock, &supernode);
+  send_deregister( &eee, &(eee.supernode));
 
-  closesocket(edge_sock_fd);
-  tuntap_close(&device);
+  closesocket(eee.sinfo.sock);
+  tuntap_close(&(eee.device));
+
+  edge_deinit( &eee );
 
   return(0);
 }

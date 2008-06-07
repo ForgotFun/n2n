@@ -43,7 +43,7 @@ static struct peer_info *known_peers = NULL;
  *  This needs to be done for all incoming REGISTER packets to keep firewalls
  *  open
  */
-static void send_register_ack( int sock_fd, u_char is_udp_socket,
+static void send_register_ack( n2n_sock_info_t * sinfo,
                                const struct peer_addr *destination_peer,
                                const struct n2n_packet_header * reqhdr )
 {
@@ -51,7 +51,7 @@ static void send_register_ack( int sock_fd, u_char is_udp_socket,
     u_int8_t pkt[N2N_PKT_HDR_SIZE];
     size_t len = sizeof(hdr);
 
-    fill_standard_header_fields(sock_fd, is_udp_socket, &hdr, NULL /* zero src MAC */ );
+    fill_standard_header_fields(sinfo, &hdr, NULL /* zero src MAC */ );
     hdr.sent_by_supernode = 1;
     hdr.msg_type = MSG_TYPE_REGISTER_ACK;
     memcpy( hdr.community_name, reqhdr->community_name, COMMUNITY_LEN);
@@ -59,17 +59,17 @@ static void send_register_ack( int sock_fd, u_char is_udp_socket,
     /* leave IP sockets unfilled. */
 
     marshall_n2n_packet_header( pkt, &hdr );
-    send_packet(sock_fd, is_udp_socket, (char *)pkt, &len, destination_peer, 1);
+    send_packet(sinfo, (char *)pkt, &len, destination_peer, 1);
 }
 
 static void register_peer(struct n2n_packet_header *hdr,
 			  struct peer_addr *sender,
-			  int sock_fd, u_char is_udp_socket) {
+			  n2n_sock_info_t * sinfo) {
   struct peer_info *scan = known_peers;
   ipstr_t buf, buf1;
   macstr_t mac_buf;
 
-  send_register_ack( sock_fd, is_udp_socket, sender, hdr ); /* keep firewalls open */
+  send_register_ack( sinfo, sender, hdr ); /* keep firewalls open */
 
   while(scan != NULL) {
     if((strcmp(scan->community_name, hdr->community_name) == 0)
@@ -107,10 +107,10 @@ static void register_peer(struct n2n_packet_header *hdr,
   memcpy(&scan->public_ip, sender, sizeof(struct peer_addr));
   memcpy(&scan->private_ip, &hdr->private_ip, sizeof(struct peer_addr));
   memcpy(&scan->mac_addr, hdr->src_mac, 6);
-  scan->last_seen = time(NULL); // FIX aggiungere un timeout
-  scan->next = known_peers;
-  scan->sock_fd = sock_fd, scan->is_udp_socket = is_udp_socket;
-  known_peers = scan;
+  scan->last_seen       = time(NULL); // FIX aggiungere un timeout
+  scan->next            = known_peers;
+  scan->sinfo           = *sinfo;
+  known_peers           = scan;
 
   traceEvent(TRACE_NORMAL, "Registered new node [public_ip=(%d)%s:%d][private_ip=%s:%d][mac=%s][community=%s]",
              scan->public_ip.family,
@@ -172,7 +172,7 @@ static const struct option long_options[] = {
 
 static void handle_packet(char *packet, u_int packet_len, 
 			  struct peer_addr *sender,
-			  int sock_fd, u_char is_udp_socket) {
+			  n2n_sock_info_t * sinfo) {
   ipstr_t buf;
 
   traceEvent(TRACE_INFO, "Received message from node [%s:%d]",
@@ -196,7 +196,7 @@ static void handle_packet(char *packet, u_int packet_len,
 
     if(hdr->msg_type == MSG_TYPE_REGISTER) 
     {
-        register_peer(hdr, sender, sock_fd, is_udp_socket);
+        register_peer(hdr, sender, sinfo);
     }
     else if(hdr->msg_type == MSG_TYPE_DEREGISTER) {
       deregister_peer(hdr, sender);
@@ -224,7 +224,7 @@ static void handle_packet(char *packet, u_int packet_len,
           int data_sent_len;
           size_t len = packet_len;
           
-          data_sent_len = send_data(scan->sock_fd, scan->is_udp_socket, packet, &len, &scan->public_ip, 0);
+          data_sent_len = send_data( &(scan->sinfo), packet, &len, &scan->public_ip, 0);
 
 	  if(data_sent_len != len)
 	    traceEvent(TRACE_WARNING, "sendto() [sent=%d][attempted_to_send=%d] [%s]\n",
@@ -266,16 +266,20 @@ DWORD tcpReadThread(LPVOID lpArg)
   void* tcpReadThread(void *lpArg)
 #endif
 {
-  int sock_fd = (int)lpArg;
+  n2n_sock_info_t sinfo;
+
+  sinfo.sock=(int)lpArg;
+  sinfo.is_udp_socket=0; /* TCP in this case */
+
   char c[1600];
   int new_line = 0;
 
-  traceEvent(TRACE_NORMAL, "Handling sock_fd %d", sock_fd);
+  traceEvent(TRACE_NORMAL, "Handling sock_fd %d", sinfo.sock);
 
   while(1) {
     int rc;
 
-    if((rc = recv(sock_fd, c, 2, 0)) > 0) {
+    if((rc = recv(sinfo.sock, c, 2, 0)) > 0) {
       if((c[0] == '\r') && (c[1] == '\n')) {
 	if(!new_line)
 	  new_line = 1;
@@ -296,14 +300,14 @@ DWORD tcpReadThread(LPVOID lpArg)
     int rc;
 
     // FIX: add select
-    if((rc = recv(sock_fd, c, 4, 0)) == 4) {
+    if((rc = recv(sinfo.sock, c, 4, 0)) == 4) {
       int len = atoi(c);
       socklen_t from_len = sizeof(struct sockaddr_in );
       struct sockaddr_in from;
 
       /* Check packet length */
       if((len <= 0) || (len >= 1600)) break;
-      rc = recvfrom(sock_fd, c, len, 0, (struct sockaddr*)&from, &from_len);
+      rc = recvfrom(sinfo.sock, c, len, 0, (struct sockaddr*)&from, &from_len);
 
       if((rc <= 0) || (rc != len))
 	break;
@@ -311,13 +315,13 @@ DWORD tcpReadThread(LPVOID lpArg)
 	struct peer_addr _from;
 
 	sockaddr_in2peer_addr(&from, &_from);
-	handle_packet(c, len, &_from, sock_fd, 0 /* tcp */);
+	handle_packet(c, len, &_from, &sinfo);
       }
     } else
       break;
   }
 
-  closesocket(sock_fd);
+  closesocket(sinfo.sock);
 #ifdef WIN32
 	return(0);
 #else
@@ -351,7 +355,8 @@ static void startTcpReadThread(int sock_fd) {
 
 int main(int argc, char* argv[]) {
   int opt, local_port = 0;
-  int udp_sock_fd, tcp_sock_fd;
+  n2n_sock_info_t udp_sinfo;
+  n2n_sock_info_t tcp_sinfo;
 
   optarg = NULL;
   while((opt = getopt_long(argc, argv, "l:vh", long_options, NULL)) != EOF) {
@@ -371,13 +376,13 @@ int main(int argc, char* argv[]) {
   if(!(local_port))
     help();
 
-  if(init_n2n( NULL, 0) < 0) return(-1);
+  udp_sinfo.is_udp_socket=1;
+  udp_sinfo.sock = open_socket(local_port, 1, 0);
+  if(udp_sinfo.sock < 0) return(-1);
 
-  udp_sock_fd = open_socket(local_port, 1, 0);
-  if(udp_sock_fd < 0) return(-1);
-
-  tcp_sock_fd = open_socket(local_port, 0, 1);
-  if(tcp_sock_fd < 0) return(-1);
+  tcp_sinfo.is_udp_socket=0;
+  tcp_sinfo.sock = open_socket(local_port, 0, 1);
+  if(tcp_sinfo.sock < 0) return(-1);
 
   traceEvent(TRACE_NORMAL, "Supernode ready: listening on port %d [TCP/UDP]", local_port);
 
@@ -387,32 +392,32 @@ int main(int argc, char* argv[]) {
     struct timeval wait_time;
 
     FD_ZERO(&socket_mask);
-    max_sock = max(udp_sock_fd, tcp_sock_fd);
-    FD_SET(udp_sock_fd, &socket_mask);
-    FD_SET(tcp_sock_fd, &socket_mask);
+    max_sock = max(udp_sinfo.sock, tcp_sinfo.sock);
+    FD_SET(udp_sinfo.sock, &socket_mask);
+    FD_SET(tcp_sinfo.sock, &socket_mask);
 
     wait_time.tv_sec = 10; wait_time.tv_usec = 0;
     rc = select(max_sock+1, &socket_mask, NULL, NULL, &wait_time);
 
     if(rc > 0) {
-      if(FD_ISSET(udp_sock_fd, &socket_mask)) {
+      if(FD_ISSET(udp_sinfo.sock, &socket_mask)) {
 	char packet[2048];
 	size_t len;
 	struct peer_addr sender;
 	u_int8_t discarded_pkt;
 	struct n2n_packet_header hdr;
 
-	len = receive_data(udp_sock_fd, 1, packet, sizeof(packet), &sender, &discarded_pkt, NULL, 0, &hdr);
+	len = receive_data( &udp_sinfo, packet, sizeof(packet), &sender, &discarded_pkt, NULL, 0, &hdr);
 
 	if(len <= 0)
 	  traceEvent(TRACE_WARNING, "recvfrom()=%d [%s]\n", len, strerror(errno));
 	else {
-	  handle_packet(packet, len, &sender, udp_sock_fd, 1);
+	  handle_packet(packet, len, &sender, &udp_sinfo);
 	}
-      } else if(FD_ISSET(tcp_sock_fd, &socket_mask)) {
+      } else if(FD_ISSET(tcp_sinfo.sock, &socket_mask)) {
 	struct sockaddr from;
 	int from_len = sizeof(from);
-	int new_sock = accept(tcp_sock_fd, (struct sockaddr*)&from,
+	int new_sock = accept(tcp_sinfo.sock, (struct sockaddr*)&from,
 			      (socklen_t*)&from_len);
 
 	if(new_sock < 0) {
@@ -426,8 +431,8 @@ int main(int argc, char* argv[]) {
     purge_expired_registrations( &known_peers );
   } /* while */
 
-  closesocket(udp_sock_fd);
-  closesocket(tcp_sock_fd);
+  closesocket(udp_sinfo.sock);
+  closesocket(tcp_sinfo.sock);
 
   return(0);
 }

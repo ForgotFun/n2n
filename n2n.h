@@ -163,47 +163,28 @@ typedef char ipstr_t[32];
 /** Common type used to hold stringified MAC addresses. */
 typedef char macstr_t[32];
 
+struct n2n_sock_info
+{
+    int                 sock;
+    char                is_udp_socket /*= 1*/;    
+};
+
+typedef struct n2n_sock_info    n2n_sock_info_t;
+
 struct peer_info {
   char community_name[16], mac_addr[6];
   struct peer_addr public_ip, private_ip;
   time_t last_seen;
   struct peer_info *next;
   /* socket */
-  int sock_fd;
-  u_char is_udp_socket;
+  n2n_sock_info_t sinfo;
 };
+
+struct n2n_edge; /* defined in edge.c */
+typedef struct n2n_edge         n2n_edge_t;
+
 
 /* ************************************** */
-
-struct packet_list {
-  char *packet;
-  u_int16_t packet_len;
-  u_int16_t seq_id;
-  struct packet_list *next;
-};
-
-struct send_hash_entry {
-  char mac_addr[6];
-  u_int16_t last_seq_id;
-  u_int16_t last_ack_sequence_id;
-  u_int16_t num_unacked_pkts;
-  struct packet_list *unacked_packet_list;
-  struct send_hash_entry *next;
-};
-
-#define MAX_NUM_UNACKED_PKTS  10
-
-struct recv_hash_entry {
-  char mac_addr[6];
-  u_int32_t num_packets;
-  u_int16_t last_acked_seq_id, last_rcvd_seq_id;
-  struct recv_hash_entry *next;
-};
-
-/* ************************************** */
-
-#define SEND_SEQ_ID_HASH_LEN      1024
-#define RECV_SEQ_ID_HASH_LEN      SEND_SEQ_ID_HASH_LEN
 
 #if defined(DEBUG)
 #define SOCKET_TIMEOUT_INTERVAL_SECS    5
@@ -236,7 +217,7 @@ struct recv_hash_entry {
 /* ************************************** */
 
 /* Variables */
-extern TWOFISH *tf;
+// extern TWOFISH *tf;
 extern int traceLevel;
 extern char broadcast_addr[6];
 extern char multicast_addr[6];
@@ -244,9 +225,9 @@ extern char multicast_addr[6];
 /* Functions */
 extern void sockaddr_in2peer_addr(struct sockaddr_in *in, struct peer_addr *out);
 extern void peer_addr2sockaddr_in(const struct peer_addr *in, struct sockaddr_in *out);
-extern int  init_n2n(u_int8_t *encrypt_pwd, u_int32_t encrypt_pwd_len );
-extern void term_n2n();
-extern void send_ack(int sock_fd, u_char is_udp_socket,
+// extern int  init_n2n(u_int8_t *encrypt_pwd, u_int32_t encrypt_pwd_len );
+// extern void term_n2n();
+extern void send_ack(n2n_sock_info_t * sinfo,
 		     u_int16_t last_rcvd_seq_id,
 		     struct n2n_packet_header *header,
 		     struct peer_addr *remote_peer,
@@ -261,29 +242,29 @@ extern void tuntap_close(struct tuntap_dev *tuntap);
 extern SOCKET open_socket(int local_port, int udp_sock, int server_mode);
 extern int connect_socket(int sock_fd, struct peer_addr* dest);
 
-extern void send_packet(int sock, u_char is_udp_socket,
+extern void send_packet(n2n_sock_info_t * sinfo,
 			char *packet, size_t *packet_len,
 			const struct peer_addr *remote_peer,
 			u_int8_t compress_data);
 extern char* intoa(u_int32_t addr, char* buf, u_short buf_len);
 extern char* macaddr_str(const char *mac, char *buf, int buf_len);
 extern int   str2mac( u_int8_t * outmac /* 6 bytes */, const char * s );
-extern void fill_standard_header_fields(int sock, u_char use_udp_socket,
+extern void fill_standard_header_fields(n2n_sock_info_t * eee,
 					struct n2n_packet_header *hdr,
 					char *src_mac);
 
-extern u_int receive_data(int sock_fd, u_char is_udp_socket,
+extern u_int receive_data(n2n_sock_info_t * sinfo,
 			  char *packet, size_t packet_len, 
 			  struct peer_addr *from, u_int8_t *discarded_pkt,
 			  char *tun_mac_addr, u_int8_t decompress_data,
 			  struct n2n_packet_header *hdr);
-extern u_int reliable_sendto(int sock_fd, u_char is_udp_socket,
+extern u_int reliable_sendto(n2n_sock_info_t * sinfo,
 			     char *packet, size_t *packet_len, 
 			     const struct peer_addr *from, u_int8_t compress_data);
-extern u_int unreliable_sendto(int sock_fd, u_char is_udp_socket,
+extern u_int unreliable_sendto(n2n_sock_info_t * sinfo,
 			       char *packet, size_t *packet_len, 
 			       const struct peer_addr *from, u_int8_t compress_data);
-extern u_int send_data(int sock_fd,  u_char is_udp_socket,
+extern u_int send_data(n2n_sock_info_t * sinfo,
 		       char *packet, size_t *packet_len, 
 		       const struct peer_addr *to, u_int8_t compress_data);
 extern u_int8_t is_multi_broadcast(char *dest_mac);
