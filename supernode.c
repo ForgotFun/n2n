@@ -267,12 +267,11 @@ DWORD tcpReadThread(LPVOID lpArg)
 #endif
 {
   n2n_sock_info_t sinfo;
+  char c[1600];
+  int new_line = 0;
 
   sinfo.sock=(int)lpArg;
   sinfo.is_udp_socket=0; /* TCP in this case */
-
-  char c[1600];
-  int new_line = 0;
 
   traceEvent(TRACE_NORMAL, "Handling sock_fd %d", sinfo.sock);
 

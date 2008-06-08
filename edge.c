@@ -979,8 +979,10 @@ void readFromIPSocket( n2n_edge_t * eee )
 #ifdef WIN32
 static DWORD tunReadThread(LPVOID lpArg )
 {
+	n2n_edge_t *eee = (n2n_edge_t*)lpArg;
+
   while(1) {
-    readFromTAPSocket();
+    readFromTAPSocket(eee);
   }
 
   return((DWORD)NULL);
@@ -988,14 +990,14 @@ static DWORD tunReadThread(LPVOID lpArg )
 
 /* ***************************************************** */
 
-static void startTunReadThread() {
+static void startTunReadThread(n2n_edge_t *eee) {
   HANDLE hThread;
   DWORD dwThreadId;
 
   hThread = CreateThread(NULL, /* no security attributes */
 			 0,            /* use default stack size */
 			 (LPTHREAD_START_ROUTINE)tunReadThread, /* thread function */
-			 NULL,     /* argument to thread function */
+			 (void*)eee,     /* argument to thread function */
 			 0,            /* use default creation flags */
 			 &dwThreadId); /* returns the thread identifier */
 }
@@ -1212,7 +1214,7 @@ int main(int argc, char* argv[]) {
   traceEvent(TRACE_NORMAL, "Ready");
 
 #ifdef WIN32
-  startTunReadThread(eee);
+  startTunReadThread(&eee);
 #endif
 
   /* Main loop

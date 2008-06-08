@@ -7,6 +7,10 @@
 #ifndef _N2N_WIN32_H_
 #define _N2N_WIN32_H_
 
+#ifndef _CRT_SECURE_NO_WARNINGS
+#define _CRT_SECURE_NO_WARNINGS
+#endif
+
 #include "wintap.h"
 
 typedef unsigned int u_int32_t;
