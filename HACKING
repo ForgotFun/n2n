@@ -3,7 +3,7 @@ file: HACKING
 Last updated: 2008-04-10
 
 --------
-(C) 2008 - Richard Andrews <BbMaj7@yahoo.com.au>
+(C) 2008 - Richard Andrews <bbmaj7@yahoo.com.au>
 
 This program and document is free software; you can redistribute 
 it and/or modify it under the terms of the GNU General Public License 
@@ -165,7 +165,7 @@ else
 (Notes):
 
  * In testing it was noted that if a symmetric NAT firewall shuts down the UDP
-association but the knwn_peers registration is still active, then the peer
+association but the known_peers registration is still active, then the peer
 becomes unreachable until the known_peers registration is deleted. Suggest two
 ways to mitigate this problem:
    (a) make the known_peers purge timeout a config paramter;
