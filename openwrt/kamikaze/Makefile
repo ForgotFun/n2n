@@ -42,7 +42,7 @@ define Build/Configure
 endef
 
 define Build/Compile
-	$(MAKE) -C$(PKG_BUILD_DIR)
+	$(MAKE) CC="$(TARGET_CC)" -C $(PKG_BUILD_DIR)
 endef
 
 
