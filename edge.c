@@ -48,7 +48,7 @@ struct n2n_edge
     u_int               pkt_sent /*= 0*/;
     tuntap_dev          device;
     int                 allow_routing /*= 0*/;
-
+    int                 drop_ipv6_ndp /*= 0*/;
     char *              encrypt_key /* = NULL*/;
     TWOFISH *           tf;
 
@@ -72,6 +72,7 @@ static int edge_init(n2n_edge_t * eee) {
   eee->sinfo.is_udp_socket=1;
   eee->pkt_sent=0;
   eee->allow_routing=0;
+  eee->drop_ipv6_ndp=0;
   eee->encrypt_key=NULL;
   eee->tf = NULL;
   eee->known_peers=NULL;
@@ -207,11 +208,6 @@ static void update_peer_address(n2n_edge_t * eee,
                                 time_t when);
 void trace_registrations( struct peer_info * scan );
 int is_ip6_discovery( const void * buf, size_t bufsize );
-struct peer_info * find_peer_by_mac( struct peer_info * list,
-                                     const char * mac );
-void peer_list_add( struct peer_info * * list,
-                    struct peer_info * new );
-size_t peer_list_size( const struct peer_info * list );
 void check_peer( n2n_edge_t * eee,
                  const struct n2n_packet_header * hdr );
 void try_send_register( n2n_edge_t * eee,
@@ -545,57 +541,6 @@ static void update_registrations( n2n_edge_t * eee ) {
 
 /* ***************************************************** */
 
-/** Find the peer entry in list with mac_addr equal to mac.
- *
- *  Does not modify the list.
- *
- *  @return NULL if not found; otherwise pointer to peer entry.
- */
-struct peer_info * find_peer_by_mac( struct peer_info * list, const char * mac )
-{
-  while(list != NULL)
-    {
-      if( 0 == memcmp(mac, list->mac_addr, 6) )
-        {
-	  return list;
-        }
-      list = list->next;
-    }
-
-  return NULL;
-}
-
-
-/** Return the number of elements in the list.
- *
- */
-size_t peer_list_size( const struct peer_info * list )
-{
-  size_t retval=0;
-
-  while ( list )
-    {
-      ++retval;
-      list = list->next;
-    }
-
-  return retval;
-}
-
-/** Add new to the head of list. If list is NULL; create it.
- *
- *  The item new is added to the head of the list. New is modified during
- *  insertion. list takes ownership of new.
- */
-void peer_list_add( struct peer_info * * list,
-                    struct peer_info * new )
-{
-  new->next = *list;
-  new->last_seen = time(NULL);
-  *list = new;
-}
-
-
 static int find_peer_destination(n2n_edge_t * eee, 
                                  const u_char *mac_address, 
                                  struct peer_addr *destination) {
@@ -734,6 +679,7 @@ static void send_packet2net(n2n_edge_t * eee,
 int is_ip6_discovery( const void * buf, size_t bufsize )
 {
   int retval = 0;
+
   if ( bufsize >= sizeof(struct ether_header) )
     {
       struct ether_header *eh = (struct ether_header*)buf;
@@ -826,7 +772,7 @@ static void readFromTAPSocket( n2n_edge_t * eee )
   else {
     traceEvent(TRACE_INFO, "### Rx L2 Msg (%d) tun -> network", len);
 
-    if ( is_ip6_discovery( decrypted_msg, len ) ) {
+    if ( eee->drop_ipv6_ndp && is_ip6_discovery( decrypted_msg, len ) ) {
       traceEvent(TRACE_WARNING, "Dropping unsupported IPv6 neighbour discovery packet");
     } else {
       send_packet2net(eee, (char*)decrypted_msg, len);
@@ -896,13 +842,6 @@ void readFromIPSocket( n2n_edge_t * eee )
 		     eee->community_name, hdr->community_name);
 	} else {
 	  if(hdr->msg_type == MSG_TYPE_PACKET) {
-	    if(memcmp(hdr->dst_mac, eee->device.mac_addr, 6)
-	       && (!is_multi_broadcast(hdr->dst_mac))) {
-	      traceEvent(TRACE_WARNING, "Received packet with invalid mac address %s: discarded\n",
-			 macaddr_str(hdr->dst_mac, mac_buf, sizeof(mac_buf)));
-	      return;
-	    }
-
 	    /* assert: the packet received is destined for device.mac_addr or broadcast MAC. */
 
 	    len -= N2N_PKT_HDR_SIZE;

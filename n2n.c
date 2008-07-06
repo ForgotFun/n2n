@@ -748,6 +748,60 @@ void print_n2n_version() {
          version, osName, buildDate);
 }
 
+
+
+
+/** Find the peer entry in list with mac_addr equal to mac.
+ *
+ *  Does not modify the list.
+ *
+ *  @return NULL if not found; otherwise pointer to peer entry.
+ */
+struct peer_info * find_peer_by_mac( struct peer_info * list, const char * mac )
+{
+  while(list != NULL)
+    {
+      if( 0 == memcmp(mac, list->mac_addr, 6) )
+        {
+	  return list;
+        }
+      list = list->next;
+    }
+
+  return NULL;
+}
+
+
+/** Return the number of elements in the list.
+ *
+ */
+size_t peer_list_size( const struct peer_info * list )
+{
+  size_t retval=0;
+
+  while ( list )
+    {
+      ++retval;
+      list = list->next;
+    }
+
+  return retval;
+}
+
+/** Add new to the head of list. If list is NULL; create it.
+ *
+ *  The item new is added to the head of the list. New is modified during
+ *  insertion. list takes ownership of new.
+ */
+void peer_list_add( struct peer_info * * list,
+                    struct peer_info * new )
+{
+  new->next = *list;
+  new->last_seen = time(NULL);
+  *list = new;
+}
+
+
 size_t purge_expired_registrations( struct peer_info ** peer_list ) {
   static time_t last_purge = 0;
   time_t now = time(NULL);

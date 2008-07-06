@@ -21,7 +21,12 @@
 
 #include "n2n.h"
 
-static u_int pkt_sent = 0;
+struct tx_stats
+{
+    size_t pkts;
+    size_t errors;
+};
+
 
 /* *********************************************** */
 
@@ -34,6 +39,7 @@ static void help() {
 /* *********************************************** */
 
 static struct peer_info *known_peers = NULL;
+static struct tx_stats supernode_stats = {0,0};
 
 /* *********************************************** */
 
@@ -170,91 +176,173 @@ static const struct option long_options[] = {
 
 /* *********************************************** */
 
-static void handle_packet(char *packet, u_int packet_len, 
-			  struct peer_addr *sender,
-			  n2n_sock_info_t * sinfo) {
-  ipstr_t buf;
 
-  traceEvent(TRACE_INFO, "Received message from node [%s:%d]",
-	     intoa(ntohl(sender->addr_type.v4_addr), buf, sizeof(buf)),
-	     ntohs(sender->port));
+/** Forward a L2 packet to every edge registered for the community of the
+ * originator.
+ *
+ *  @return number of copies of the packet sent
+ */
+static size_t broadcast_packet(char *packet, u_int packet_len, 
+                               struct peer_addr *sender,
+                               n2n_sock_info_t * sinfo,
+                               struct n2n_packet_header *hdr )
+{
+    size_t numsent=0;
+    struct peer_info *scan;
 
-  if(packet_len < N2N_PKT_HDR_SIZE)
-    traceEvent(TRACE_WARNING, "Received packet too short [len=%d]\n", packet_len);
-  else {
-    struct n2n_packet_header hdr_storage;
-    struct n2n_packet_header *hdr = &hdr_storage;
-
-    unmarshall_n2n_packet_header( hdr, (u_int8_t *)packet );
-
-    if(hdr->version != N2N_VERSION) {
-      traceEvent(TRACE_WARNING,
-		 "Received packet with unknown protocol version (%d): discarded\n",
-		 hdr->version);
-      return;
-    }
-
-    if(hdr->msg_type == MSG_TYPE_REGISTER) 
-    {
-        register_peer(hdr, sender, sinfo);
-    }
-    else if(hdr->msg_type == MSG_TYPE_DEREGISTER) {
-      deregister_peer(hdr, sender);
-    } else if(hdr->msg_type == MSG_TYPE_PACKET) {
-      /* This is a packet to route */
-      u_int8_t is_dst_broad_multi_cast;
-      struct peer_info *scan;
-      u_char packet_sent = 0;
-
-      hdr->ttl++; /* FIX discard packets with a high TTL */
-      is_dst_broad_multi_cast = is_multi_broadcast(hdr->dst_mac);
-
-      /* Put the original packet sender (public) address */
-      memcpy(&hdr->public_ip, sender, sizeof(struct peer_addr));
-      hdr->sent_by_supernode = 1;
-
-      marshall_n2n_packet_header( (u_int8_t *)packet, hdr );
-
-      scan = known_peers;
-      while(scan != NULL) {
-	if((strcmp(scan->community_name, hdr->community_name) == 0)
-	   && (is_dst_broad_multi_cast || (memcmp(scan->mac_addr, hdr->dst_mac, 6) == 0))
-	   && (memcmp(sender, &scan->public_ip, sizeof(struct peer_addr)) /* No L3 self-send */)
-	   && (memcmp(hdr->dst_mac, hdr->src_mac, 6) /* No L2 self-send */)) {
-          int data_sent_len;
-          size_t len = packet_len;
+    scan = known_peers;
+    while(scan != NULL) {
+        if((strcmp(scan->community_name, hdr->community_name) == 0)
+           && (memcmp(sender, &scan->public_ip, sizeof(struct peer_addr)) /* No L3 self-send */) )
+        {
+            int data_sent_len;
+            size_t len = packet_len;
           
-          data_sent_len = send_data( &(scan->sinfo), packet, &len, &scan->public_ip, 0);
+            data_sent_len = send_data( &(scan->sinfo), packet, &len, &scan->public_ip, 0);
 
-	  if(data_sent_len != len)
-	    traceEvent(TRACE_WARNING, "sendto() [sent=%d][attempted_to_send=%d] [%s]\n",
-		       data_sent_len, len, strerror(errno));
-	  else {
-	    ipstr_t buf1;
+            if(data_sent_len != len)
+            {
+                ++(supernode_stats.errors);
+                traceEvent(TRACE_WARNING, "sendto() [sent=%d][attempted_to_send=%d] [%s]\n",
+                           data_sent_len, len, strerror(errno));
+            }
+            else 
+            {
+                ipstr_t buf;
+                ipstr_t buf1;
 
-	    packet_sent = 1, pkt_sent++;
-	    traceEvent(TRACE_INFO, "Sent %smessage to remote node [%s:%d][mac=%s]",
-		       is_dst_broad_multi_cast ? "broadcast " : "",
-		       intoa(ntohl(scan->public_ip.addr_type.v4_addr), buf, sizeof(buf)),
-		       ntohs(scan->public_ip.port),
-		       macaddr_str(scan->mac_addr, buf1, sizeof(buf1)));
-	  }
+                ++numsent;
+                ++(supernode_stats.pkts);
+                traceEvent(TRACE_INFO, "Sent multicast message to remote node [%s:%d][mac=%s]",
+                           intoa(ntohl(scan->public_ip.addr_type.v4_addr), buf, sizeof(buf)),
+                           ntohs(scan->public_ip.port),
+                           macaddr_str(scan->mac_addr, buf1, sizeof(buf1)));
+            }
+        }
 
-	  // if(!is_dst_broad_multi_cast) break;
-	}
+        scan = scan->next;
+    } /* while */
 
-	scan = scan->next;
-      } /* while */
 
-      if(!packet_sent) {
-	traceEvent(TRACE_INFO, "Unable to find a recipient for the received packet [mac=%s]",
-		   macaddr_str(hdr->dst_mac, buf, sizeof(buf)));
-      }
-    } else {
-      traceEvent(TRACE_WARNING, "Unable to handle packet type %d: ignored\n",
-		 hdr->msg_type);
+    return numsent;
+}
+
+
+/** Forward a L2 packet. This may involve a broadcast operation.
+ *
+ *  Rules are as follows:
+ *
+ *  1. If the dest MAC is a multicast address, broadcast to all edges in the
+ *  community.
+ *
+ *  2. If the dest MAC is known forward to the destination edge only.
+ *     Else broadcast to all edges in the community.
+ *
+ *  @return number of copies of the packet sent
+ */
+static size_t forward_packet(char *packet, u_int packet_len, 
+                             struct peer_addr *sender,
+                             n2n_sock_info_t * sinfo,
+                             struct n2n_packet_header *hdr )
+{
+    size_t numsent=0;
+    u_int8_t is_dst_broad_multi_cast;
+    struct peer_info *scan;
+
+    ipstr_t buf;
+    ipstr_t buf1;
+
+    hdr->ttl++; /* FIX discard packets with a high TTL */
+    is_dst_broad_multi_cast = is_multi_broadcast(hdr->dst_mac);
+
+    /* Put the original packet sender (public) address */
+    memcpy(&hdr->public_ip, sender, sizeof(struct peer_addr));
+    hdr->sent_by_supernode = 1;
+
+    marshall_n2n_packet_header( (u_int8_t *)packet, hdr );
+
+
+    if ( is_dst_broad_multi_cast )
+    {
+        traceEvent(TRACE_INFO, "Broadcasting. Multicast address [mac=%s]",
+                   macaddr_str(hdr->dst_mac, buf, sizeof(buf)));
+
+        numsent = broadcast_packet( packet, packet_len, sender, sinfo, hdr );
     }
-  }
+    else
+    {
+        scan = find_peer_by_mac( known_peers, hdr->dst_mac );
+        if ( scan )
+        {
+            int data_sent_len;
+            size_t len = packet_len;
+          
+            data_sent_len = send_data( &(scan->sinfo), packet, &len, &scan->public_ip, 0);
+
+            if(data_sent_len != len)
+            {
+                ++(supernode_stats.errors);
+                traceEvent(TRACE_WARNING, "sendto() [sent=%d][attempted_to_send=%d] [%s]\n",
+                           data_sent_len, len, strerror(errno));
+            }
+            else {
+                ++(supernode_stats.pkts);
+                traceEvent(TRACE_INFO, "Sent message to remote node [%s:%d][mac=%s]",
+                           intoa(ntohl(scan->public_ip.addr_type.v4_addr), buf, sizeof(buf)),
+                           ntohs(scan->public_ip.port),
+                           macaddr_str(scan->mac_addr, buf1, sizeof(buf1)));
+            }
+
+            numsent = 1;
+        }
+        else
+        {
+            traceEvent(TRACE_INFO, "Broadcasting because unknown dest [mac=%s]",
+                       macaddr_str(hdr->dst_mac, buf, sizeof(buf)));
+            numsent = broadcast_packet( packet, packet_len, sender, sinfo, hdr );
+        }
+    }
+
+    return numsent;
+}
+
+static void handle_packet(char *packet, u_int packet_len, 
+                          struct peer_addr *sender,
+                          n2n_sock_info_t * sinfo) {
+    ipstr_t buf;
+
+    traceEvent(TRACE_INFO, "Received message from node [%s:%d]",
+               intoa(ntohl(sender->addr_type.v4_addr), buf, sizeof(buf)),
+               ntohs(sender->port));
+
+    if(packet_len < N2N_PKT_HDR_SIZE)
+        traceEvent(TRACE_WARNING, "Received packet too short [len=%d]\n", packet_len);
+    else {
+        struct n2n_packet_header hdr_storage;
+        struct n2n_packet_header *hdr = &hdr_storage;
+
+        unmarshall_n2n_packet_header( hdr, (u_int8_t *)packet );
+
+        if(hdr->version != N2N_VERSION) {
+            traceEvent(TRACE_WARNING,
+                       "Received packet with unknown protocol version (%d): discarded\n",
+                       hdr->version);
+            return;
+        }
+
+        if(hdr->msg_type == MSG_TYPE_REGISTER) 
+        {
+            register_peer(hdr, sender, sinfo);
+        }
+        else if(hdr->msg_type == MSG_TYPE_DEREGISTER) {
+            deregister_peer(hdr, sender);
+        } else if(hdr->msg_type == MSG_TYPE_PACKET) {
+            forward_packet( packet, packet_len, sender, sinfo, hdr );
+        } else {
+            traceEvent(TRACE_WARNING, "Unable to handle packet type %d: ignored\n",
+                       hdr->msg_type);
+        }
+    }
 }
 
 /* *********************************************** */

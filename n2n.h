@@ -272,9 +272,16 @@ extern char* msg_type2str(u_short msg_type);
 extern void hexdump(char *buf, u_int len);
 
 void print_n2n_version();
+
+
+/* Operations on peer_info lists. */
+struct peer_info * find_peer_by_mac( struct peer_info * list,
+                                     const char * mac );
+void   peer_list_add( struct peer_info * * list,
+                      struct peer_info * new );
+size_t peer_list_size( const struct peer_info * list );
 size_t purge_peer_list( struct peer_info ** peer_list, 
                         time_t purge_before );
-
 size_t purge_expired_registrations( struct peer_info ** peer_list );
 
 /* version.c */
