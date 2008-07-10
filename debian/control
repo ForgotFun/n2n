@@ -1,0 +1,12 @@
+Source: n2n
+Section: system
+Priority: extra
+Maintainer: Richard Andrews <andrews@ntop.org>
+Build-Depends: debhelper (>= 5), libc6-dev (>= 2.0)
+Standards-Version: 3.7.2
+
+Package: n2n
+Architecture: any
+Depends: libc6 (>= 2)
+Description: Short n2n description in control file
+ Long description in control file.

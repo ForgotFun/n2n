@@ -1,4 +1,4 @@
-#!/bin/sh
+#!/bin/bash
 
 # This script makes a SRPM - a source RPM file which can be built into the
 # appropriate distro specific RPM for any platform.
@@ -20,11 +20,22 @@ set -x
 BASE=`pwd`
 
 TARFILE=`${BASE}/scripts/mk_tar.sh`
+TEMPDIR="build_deb"
 
 test -f ${TARFILE}
 
-echo "Building SRPM"
-# -ts means build source RPM from tarfile
-rpmbuild -ts ${TARFILE}
+echo "Building .deb"
+
+mkdir ${TEMPDIR}
+
+pushd ${TEMPDIR}
+
+tar xzf ${TARFILE} #At original location
+
+cd n2n*
+
+dpkg-buildpackage -rfakeroot
+
+popd
 
 echo "Done"

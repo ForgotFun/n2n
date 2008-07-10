@@ -13,7 +13,9 @@ MKDIR=mkdir -p
 INSTALL_PROG=$(INSTALL) -m755
 INSTALL_DOC=$(INSTALL) -m644
 
-PREFIX?=/usr
+
+# DESTDIR set in debian make system
+PREFIX?=$(DESTDIR)/usr
 BINDIR=$(PREFIX)/bin
 SBINDIR=$(PREFIX)/sbin
 MANDIR?=$(PREFIX)/share/man
@@ -54,6 +56,7 @@ clean:
 	rm -rf $(N2N_OBJS) $(N2N_LIB) $(APPS) $(DOCS) *.dSYM *~ version.c
 
 install: edge supernode edge.8.gz supernode.1.gz
+	echo "MANDIR=$(MANDIR)"
 	$(MKDIR) $(BINDIR) $(SBINDIR) $(MAN1DIR) $(MAN8DIR)
 	$(INSTALL_PROG) supernode $(BINDIR)/
 	$(INSTALL_PROG) edge $(SBINDIR)/
