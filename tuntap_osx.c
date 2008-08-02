@@ -56,7 +56,7 @@ int tuntap_open(tuntap_dev *device /* ignored */,
         /* FIXME - This is not tested. Might be wrong syntax for OS X */
 
         /* Set the hw address before bringing the if up. */
-        snprintf(buf, sizeof(buf), "ifconfig tap%d hw ether %s",
+        snprintf(buf, sizeof(buf), "ifconfig tap%d ether %s",
                  i, device_mac);
         system(buf);
     }
