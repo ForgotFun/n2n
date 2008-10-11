@@ -1,5 +1,5 @@
 
-N2N_VERSION="1.2"
+N2N_VERSION="1.2.1"
 
 
 ########
@@ -29,7 +29,7 @@ LIBS=-lpthread
 APPS=edge supernode
 DOCS=edge.8.gz supernode.1.gz
 
-all: $(APPS) $(DOCS)
+all: $(APPS) #$(DOCS)
 
 edge: edge.c $(N2N_LIB) n2n.h Makefile
 	$(CC) $(CFLAGS) edge.c $(N2N_LIB) $(LIBS) -o edge

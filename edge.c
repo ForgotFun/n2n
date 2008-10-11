@@ -23,9 +23,15 @@
 #include "minilzo.h"
 #include "n2n.h"
 #include <assert.h>
+#include <sys/stat.h>
 
 /** Time between logging system STATUS messages */
 #define STATUS_UPDATE_INTERVAL (30 * 60) /*secs*/
+
+/* maximum length of command line arguments */
+#define MAX_CMDLINE_BUFFER_LENGTH    4096
+/* maximum length of a line in the configuration file */
+#define MAX_CONFFILE_LINE_LENGTH     1024
 
 /* static struct peer_addr supernode; */
 /* static char *community_name = NULL, is_udp_sock = 1; */
@@ -35,6 +41,7 @@
 
 /* static char *encrypt_key = NULL; */
 /* static TWOFISH *tf; */
+
 
 struct n2n_edge
 {
@@ -59,6 +66,128 @@ struct n2n_edge
 
 static void send_packet2net(n2n_edge_t * eee,
 			    char *decrypted_msg, size_t len);
+
+
+/* ************************************** */
+
+/* parse the configuration file */
+static int readConfFile(const char * filename, char * const linebuffer) {
+    struct stat stats;
+    FILE    *   fd;
+    char    *   buffer = NULL;
+
+    buffer = (char *)malloc(MAX_CONFFILE_LINE_LENGTH);
+    if (!buffer) {
+	traceEvent( TRACE_ERROR, "Unable to allocate memory");
+	return -1;
+    }
+
+    if (stat(filename, &stats)) {
+	if (errno == ENOENT) 
+	    traceEvent(TRACE_ERROR, "parameter file %s not found/unable to access\n", filename);
+	else 
+	    traceEvent(TRACE_ERROR, "cannot stat file %s, errno=%d\n",filename, errno);
+	free(buffer);
+	return -1;
+    }
+        
+    fd = fopen(filename, "rb");
+    if (!fd) {
+	traceEvent(TRACE_ERROR, "Unable to open parameter file '%s' (%d)...\n",filename,errno);
+	free(buffer);
+	return -1;
+    }
+    while(fgets(buffer, MAX_CONFFILE_LINE_LENGTH,fd)) {
+	char    *   p = NULL;
+
+	/* strip out comments */
+	p = strchr(buffer, '#');
+	if (p) *p ='\0';
+
+	/* remove \n */
+	p = strchr(buffer, '\n');
+	if (p) *p ='\0';
+
+        /* strip out heading spaces */
+	p = buffer;
+	while(*p == ' ' && *p != '\0') ++p;
+	if (p != buffer) strncpy(buffer,p,strlen(p)+1);
+            
+	/* strip out trailing spaces */
+	while(strlen(buffer) && buffer[strlen(buffer)-1]==' ') 
+	    buffer[strlen(buffer)-1]= '\0';
+
+	/* check for nested @file option */
+	if (strchr(buffer, '@')) {
+	    traceEvent(TRACE_ERROR, "@file in file nesting is not supported\n");
+	    free(buffer);
+            return -1;
+	}
+	if ((strlen(linebuffer)+strlen(buffer)+2)< MAX_CMDLINE_BUFFER_LENGTH) {
+	    strncat(linebuffer, " ", 1);
+	    strncat(linebuffer, buffer, strlen(buffer));
+	} else {
+	    traceEvent(TRACE_ERROR, "too many argument");
+	    free(buffer);
+	    return -1;
+	}
+    }
+        
+    free(buffer);
+    fclose(fd);
+
+    return 0;
+}
+
+/* Create the argv vector */
+static char ** buildargv(char * const linebuffer) {
+    const int  INITIAL_MAXARGC = 16;	/* Number of args + NULL in initial argv */
+    int     maxargc;
+    int     argc=0;
+    char ** argv;
+    char *  buffer, * buff;
+    
+    buffer = (char *)malloc(strlen(linebuffer)+2);
+    if (!buffer) {
+	traceEvent( TRACE_ERROR, "Unable to allocate memory");
+	return NULL;
+    }
+    strncpy(buffer, linebuffer,strlen(linebuffer));
+
+    maxargc = INITIAL_MAXARGC;
+    argv = (char **)malloc(maxargc * sizeof(char*));
+    if (argv == NULL) {
+	traceEvent( TRACE_ERROR, "Unable to allocate memory");
+	return NULL;
+    }    
+    buff = buffer;
+    while(buff) {
+	char * p = strchr(buff,' ');
+	if (p) {
+	    *p='\0';
+            argv[argc++] = strdup(buff);
+	    while(*++p == ' ' && *p != '\0');
+	    buff=p;
+            if (argc >= maxargc) {
+                maxargc *= 2;
+                argv = (char **)realloc(argv, maxargc * sizeof(char*));
+                if (argv == NULL) {
+                    traceEvent(TRACE_ERROR, "Unable to re-allocate memory");
+		    free(buffer);
+                    return NULL;
+                }
+            }
+        } else {
+	    argv[argc++] = strdup(buff);
+	    break;
+	}
+    }
+    argv[argc] = NULL;
+    free(buffer);
+    return argv;
+}
+
+
 
 /* ************************************** */
 
@@ -1010,6 +1139,10 @@ int main(int argc, char* argv[]) {
   char * device_mac=NULL;
   char * encrypt_key;
 
+  int     i, effectiveargc=0;
+  char ** effectiveargv=NULL;
+  char  * linebuffer = NULL;
+
   n2n_edge_t eee; /* single instance for this program */
 
   if (-1 == edge_init(&eee) ){
@@ -1027,8 +1160,43 @@ int main(int argc, char* argv[]) {
   memset(&(eee.supernode), 0, sizeof(eee.supernode));
   eee.supernode.family = AF_INET;
 
+  linebuffer = (char *)malloc(MAX_CMDLINE_BUFFER_LENGTH); 
+  if (!linebuffer) {
+      traceEvent( TRACE_ERROR, "Unable to allocate memory");
+      exit(1);
+  }
+  snprintf(linebuffer, MAX_CMDLINE_BUFFER_LENGTH, "%s",argv[0]);
+  for(i=1;i<argc;++i) {
+      if(argv[i][0] == '@') {
+	  if (readConfFile(&argv[i][1], linebuffer)<0) exit(1); /* <<<<----- check */
+      } else
+	  if ((strlen(linebuffer)+strlen(argv[i])+2) < MAX_CMDLINE_BUFFER_LENGTH) {
+	      strncat(linebuffer, " ", 1);
+	      strncat(linebuffer, argv[i], strlen(argv[i]));
+	  } else {
+	      traceEvent( TRACE_ERROR, "too many argument");
+	      exit(1);
+	  }
+  }
+  /*  strip trailing spaces */
+  while(strlen(linebuffer) && linebuffer[strlen(linebuffer)-1]==' ') 
+      linebuffer[strlen(linebuffer)-1]= '\0';
+  
+  /* build the new argv from the linebuffer */
+  effectiveargv = buildargv(linebuffer);
+
+  effectiveargc =0;
+  while (effectiveargv[effectiveargc]) ++effectiveargc;
+
+  if (linebuffer) { 
+      free(linebuffer);
+      linebuffer = NULL;
+  }
+
+  /* {int k;for(k=0;k<effectiveargc;++k)  printf("%s\n",effectiveargv[k]);} */
+
   optarg = NULL;
-  while((opt = getopt_long(argc, argv, "k:a:c:u:g:m:d:l:p:fvhrt", long_options, NULL)) != EOF) {
+  while((opt = getopt_long(effectiveargc, effectiveargv, "k:a:c:u:g:m:d:l:p:fvhrt", long_options, NULL)) != EOF) {
     switch (opt) {
     case 'a':
       ip_addr = strdup(optarg);
