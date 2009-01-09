@@ -1,5 +1,5 @@
 /*
- * (C) 2007-08 - Luca Deri <deri@ntop.org>
+ * (C) 2007-09 - Luca Deri <deri@ntop.org>
  *
  * This program is free software; you can redistribute it and/or modify
  * it under the terms of the GNU General Public License as published by
@@ -33,36 +33,30 @@
 /* maximum length of a line in the configuration file */
 #define MAX_CONFFILE_LINE_LENGTH     1024
 
-/* static struct peer_addr supernode; */
-/* static char *community_name = NULL, is_udp_sock = 1; */
-/* u_int pkt_sent = 0; */
-/* static tuntap_dev device; */
-/* static int edge_sock_fd, allow_routing = 0; */
-
-/* static char *encrypt_key = NULL; */
-/* static TWOFISH *tf; */
-
-
 struct n2n_edge
 {
-    struct peer_addr    supernode;
-    char *              community_name /*= NULL*/;
+  u_char              re_resolve_supernode_ip;
+  struct peer_addr    supernode;
+  char                supernode_ip[48];
+  char *              community_name /*= NULL*/;
+  
+  /*     int                 sock; */
+  /*     char                is_udp_socket /\*= 1*\/; */
+  n2n_sock_info_t     sinfo;
 
-/*     int                 sock; */
-/*     char                is_udp_socket /\*= 1*\/; */
-    n2n_sock_info_t     sinfo;
+  u_int               pkt_sent /*= 0*/;
+  tuntap_dev          device;
+  int                 allow_routing /*= 0*/;
+  int                 drop_ipv6_ndp /*= 0*/;
+  char *              encrypt_key /* = NULL*/;
+  TWOFISH *           tf;
 
-    u_int               pkt_sent /*= 0*/;
-    tuntap_dev          device;
-    int                 allow_routing /*= 0*/;
-    int                 drop_ipv6_ndp /*= 0*/;
-    char *              encrypt_key /* = NULL*/;
-    TWOFISH *           tf;
-
-    struct peer_info *  known_peers /* = NULL*/;
-    struct peer_info *  pending_peers /* = NULL*/;
-    time_t              last_register /* = 0*/;
+  struct peer_info *  known_peers /* = NULL*/;
+  struct peer_info *  pending_peers /* = NULL*/;
+  time_t              last_register /* = 0*/;
 };
+
+static void supernode2addr(n2n_edge_t * eee, char* addr);
 
 static void send_packet2net(n2n_edge_t * eee,
 			    char *decrypted_msg, size_t len);
@@ -72,119 +66,119 @@ static void send_packet2net(n2n_edge_t * eee,
 
 /* parse the configuration file */
 static int readConfFile(const char * filename, char * const linebuffer) {
-    struct stat stats;
-    FILE    *   fd;
-    char    *   buffer = NULL;
+  struct stat stats;
+  FILE    *   fd;
+  char    *   buffer = NULL;
 
-    buffer = (char *)malloc(MAX_CONFFILE_LINE_LENGTH);
-    if (!buffer) {
-	traceEvent( TRACE_ERROR, "Unable to allocate memory");
-	return -1;
-    }
+  buffer = (char *)malloc(MAX_CONFFILE_LINE_LENGTH);
+  if (!buffer) {
+    traceEvent( TRACE_ERROR, "Unable to allocate memory");
+    return -1;
+  }
 
-    if (stat(filename, &stats)) {
-	if (errno == ENOENT) 
-	    traceEvent(TRACE_ERROR, "parameter file %s not found/unable to access\n", filename);
-	else 
-	    traceEvent(TRACE_ERROR, "cannot stat file %s, errno=%d\n",filename, errno);
-	free(buffer);
-	return -1;
-    }
-        
-    fd = fopen(filename, "rb");
-    if (!fd) {
-	traceEvent(TRACE_ERROR, "Unable to open parameter file '%s' (%d)...\n",filename,errno);
-	free(buffer);
-	return -1;
-    }
-    while(fgets(buffer, MAX_CONFFILE_LINE_LENGTH,fd)) {
-	char    *   p = NULL;
-
-	/* strip out comments */
-	p = strchr(buffer, '#');
-	if (p) *p ='\0';
-
-	/* remove \n */
-	p = strchr(buffer, '\n');
-	if (p) *p ='\0';
-
-        /* strip out heading spaces */
-	p = buffer;
-	while(*p == ' ' && *p != '\0') ++p;
-	if (p != buffer) strncpy(buffer,p,strlen(p)+1);
-            
-	/* strip out trailing spaces */
-	while(strlen(buffer) && buffer[strlen(buffer)-1]==' ') 
-	    buffer[strlen(buffer)-1]= '\0';
-
-	/* check for nested @file option */
-	if (strchr(buffer, '@')) {
-	    traceEvent(TRACE_ERROR, "@file in file nesting is not supported\n");
-	    free(buffer);
-            return -1;
-	}
-	if ((strlen(linebuffer)+strlen(buffer)+2)< MAX_CMDLINE_BUFFER_LENGTH) {
-	    strncat(linebuffer, " ", 1);
-	    strncat(linebuffer, buffer, strlen(buffer));
-	} else {
-	    traceEvent(TRACE_ERROR, "too many argument");
-	    free(buffer);
-	    return -1;
-	}
-    }
-        
+  if (stat(filename, &stats)) {
+    if (errno == ENOENT)
+      traceEvent(TRACE_ERROR, "parameter file %s not found/unable to access\n", filename);
+    else
+      traceEvent(TRACE_ERROR, "cannot stat file %s, errno=%d\n",filename, errno);
     free(buffer);
-    fclose(fd);
+    return -1;
+  }
 
-    return 0;
+  fd = fopen(filename, "rb");
+  if (!fd) {
+    traceEvent(TRACE_ERROR, "Unable to open parameter file '%s' (%d)...\n",filename,errno);
+    free(buffer);
+    return -1;
+  }
+  while(fgets(buffer, MAX_CONFFILE_LINE_LENGTH,fd)) {
+    char    *   p = NULL;
+
+    /* strip out comments */
+    p = strchr(buffer, '#');
+    if (p) *p ='\0';
+
+    /* remove \n */
+    p = strchr(buffer, '\n');
+    if (p) *p ='\0';
+
+    /* strip out heading spaces */
+    p = buffer;
+    while(*p == ' ' && *p != '\0') ++p;
+    if (p != buffer) strncpy(buffer,p,strlen(p)+1);
+
+    /* strip out trailing spaces */
+    while(strlen(buffer) && buffer[strlen(buffer)-1]==' ')
+      buffer[strlen(buffer)-1]= '\0';
+
+    /* check for nested @file option */
+    if (strchr(buffer, '@')) {
+      traceEvent(TRACE_ERROR, "@file in file nesting is not supported\n");
+      free(buffer);
+      return -1;
+    }
+    if ((strlen(linebuffer)+strlen(buffer)+2)< MAX_CMDLINE_BUFFER_LENGTH) {
+      strncat(linebuffer, " ", 1);
+      strncat(linebuffer, buffer, strlen(buffer));
+    } else {
+      traceEvent(TRACE_ERROR, "too many argument");
+      free(buffer);
+      return -1;
+    }
+  }
+
+  free(buffer);
+  fclose(fd);
+
+  return 0;
 }
 
 /* Create the argv vector */
 static char ** buildargv(char * const linebuffer) {
-    const int  INITIAL_MAXARGC = 16;	/* Number of args + NULL in initial argv */
-    int     maxargc;
-    int     argc=0;
-    char ** argv;
-    char *  buffer, * buff;
-    
-    buffer = (char *)malloc(strlen(linebuffer)+2);
-    if (!buffer) {
-	traceEvent( TRACE_ERROR, "Unable to allocate memory");
-	return NULL;
-    }
-    strncpy(buffer, linebuffer,strlen(linebuffer));
+  const int  INITIAL_MAXARGC = 16;	/* Number of args + NULL in initial argv */
+  int     maxargc;
+  int     argc=0;
+  char ** argv;
+  char *  buffer, * buff;
 
-    maxargc = INITIAL_MAXARGC;
-    argv = (char **)malloc(maxargc * sizeof(char*));
-    if (argv == NULL) {
-	traceEvent( TRACE_ERROR, "Unable to allocate memory");
-	return NULL;
-    }    
-    buff = buffer;
-    while(buff) {
-	char * p = strchr(buff,' ');
-	if (p) {
-	    *p='\0';
-            argv[argc++] = strdup(buff);
-	    while(*++p == ' ' && *p != '\0');
-	    buff=p;
-            if (argc >= maxargc) {
-                maxargc *= 2;
-                argv = (char **)realloc(argv, maxargc * sizeof(char*));
-                if (argv == NULL) {
-                    traceEvent(TRACE_ERROR, "Unable to re-allocate memory");
-		    free(buffer);
-                    return NULL;
-                }
-            }
-        } else {
-	    argv[argc++] = strdup(buff);
-	    break;
+  buffer = (char *)malloc(strlen(linebuffer)+2);
+  if (!buffer) {
+    traceEvent( TRACE_ERROR, "Unable to allocate memory");
+    return NULL;
+  }
+  strncpy(buffer, linebuffer,strlen(linebuffer));
+
+  maxargc = INITIAL_MAXARGC;
+  argv = (char **)malloc(maxargc * sizeof(char*));
+  if (argv == NULL) {
+    traceEvent( TRACE_ERROR, "Unable to allocate memory");
+    return NULL;
+  }
+  buff = buffer;
+  while(buff) {
+    char * p = strchr(buff,' ');
+    if (p) {
+      *p='\0';
+      argv[argc++] = strdup(buff);
+      while(*++p == ' ' && *p != '\0');
+      buff=p;
+      if (argc >= maxargc) {
+	maxargc *= 2;
+	argv = (char **)realloc(argv, maxargc * sizeof(char*));
+	if (argv == NULL) {
+	  traceEvent(TRACE_ERROR, "Unable to re-allocate memory");
+	  free(buffer);
+	  return NULL;
 	}
+      }
+    } else {
+      argv[argc++] = strdup(buff);
+      break;
     }
-    argv[argc] = NULL;
-    free(buffer);
-    return argv;
+  }
+  argv[argc] = NULL;
+  free(buffer);
+  return argv;
 }
 
 
@@ -195,18 +189,20 @@ static int edge_init(n2n_edge_t * eee) {
 #ifdef WIN32
   initWin32();
 #endif
+  memset(eee, 0, sizeof(n2n_edge_t));
 
-  eee->community_name=NULL;
-  eee->sinfo.sock= -1;
-  eee->sinfo.is_udp_socket=1;
-  eee->pkt_sent=0;
-  eee->allow_routing=0;
-  eee->drop_ipv6_ndp=0;
-  eee->encrypt_key=NULL;
-  eee->tf = NULL;
-  eee->known_peers=NULL;
-  eee->pending_peers=NULL;
-  eee->last_register=0;
+  eee->re_resolve_supernode_ip = 0;
+  eee->community_name = NULL;
+  eee->sinfo.sock     = -1;
+  eee->sinfo.is_udp_socket = 1;
+  eee->pkt_sent      = 0;
+  eee->allow_routing = 0;
+  eee->drop_ipv6_ndp = 0;
+  eee->encrypt_key   = NULL;
+  eee->tf            = NULL;
+  eee->known_peers   = NULL;
+  eee->pending_peers = NULL;
+  eee->last_register = 0;
 
   if(lzo_init() != LZO_E_OK) {
     traceEvent(TRACE_ERROR, "LZO compression error");
@@ -218,15 +214,15 @@ static int edge_init(n2n_edge_t * eee) {
 
 static int edge_init_twofish( n2n_edge_t * eee, u_int8_t *encrypt_pwd, u_int32_t encrypt_pwd_len )
 {
-    eee->tf = TwoFishInit(encrypt_pwd, encrypt_pwd_len);
+  eee->tf = TwoFishInit(encrypt_pwd, encrypt_pwd_len);
 
-    if ( eee->tf )
+  if ( eee->tf )
     {
-        return 0;
+      return 0;
     }
-    else
+  else
     {
-        return 1;
+      return 1;
     }
 }
 
@@ -235,9 +231,9 @@ static int edge_init_twofish( n2n_edge_t * eee, u_int8_t *encrypt_pwd, u_int32_t
 static void edge_deinit(n2n_edge_t * eee) {
   TwoFishDestroy(eee->tf);
   if ( eee->sinfo.sock >=0 )
-  {
+    {
       close( eee->sinfo.sock );
-  }
+    }
 }
 
 static void readFromIPSocket( n2n_edge_t * eee );
@@ -260,7 +256,7 @@ static void help() {
 	 "\n"
 	 "-l <supernode host:port> "
 	 "[-p <local port>] "
-	 "[-t] [-r] [-v] [-h]\n\n");
+	 "[-t] [-r] [-v] [-b] [-h]\n\n");
 
 #ifdef __linux__
   printf("-d <tun device>          | tun device name\n");
@@ -270,6 +266,8 @@ static void help() {
   printf("-c <community>           | n2n community name\n");
   printf("-k <encrypt key>         | Encryption key (ASCII) - also N2N_KEY=<encrypt key>\n");
   printf("-l <supernode host:port> | Supernode IP:port\n");
+  printf("-b                       | Periodically resolve supernode IP\n");
+  printf("                         | (when supernodes are running on dynamic IPs)\n");
   printf("-p <local port>          | Local port used for connecting to supernode\n");
 #ifndef WIN32
   printf("-u <UID>                 | User ID (numeric) to use when privileges are dropped\n");
@@ -292,8 +290,8 @@ static void help() {
 
 
 static void send_register( n2n_edge_t * eee,
-			  const struct peer_addr *remote_peer,
-			  u_char is_ack) {
+			   const struct peer_addr *remote_peer,
+			   u_char is_ack) {
   struct n2n_packet_header hdr;
   char pkt[N2N_PKT_HDR_SIZE];
   size_t len = sizeof(hdr);
@@ -599,7 +597,9 @@ static void update_peer_address(n2n_edge_t * eee,
 
 
 #if defined(DUMMY_ID_00001) /* Disabled waiting for config option to enable it */
+
 /* *********************************************** */
+
 static char gratuitous_arp[] = {
   0xFF, 0xFF, 0xFF, 0xFF, 0xFF, 0xFF, /* Dest mac */
   0x00, 0x00, 0x00, 0x00, 0x00, 0x00, /* Src mac */
@@ -660,6 +660,9 @@ static void update_registrations( n2n_edge_t * eee ) {
   if(time(NULL) < (eee->last_register+REGISTER_FREQUENCY)) return; /* Too early */
 
   traceEvent(TRACE_NORMAL, "Registering with supernode");
+  if(eee->re_resolve_supernode_ip)
+    supernode2addr(eee, eee->supernode_ip);
+
   send_register(eee, &(eee->supernode), 0); /* Register with supernode */
 
   /* REVISIT: turn-on gratuitous ARP with config option. */
@@ -670,8 +673,8 @@ static void update_registrations( n2n_edge_t * eee ) {
 
 /* ***************************************************** */
 
-static int find_peer_destination(n2n_edge_t * eee, 
-                                 const u_char *mac_address, 
+static int find_peer_destination(n2n_edge_t * eee,
+                                 const u_char *mac_address,
                                  struct peer_addr *destination) {
   const struct peer_info *scan = eee->known_peers;
   macstr_t mac_buf;
@@ -701,15 +704,13 @@ static int find_peer_destination(n2n_edge_t * eee,
 
   if ( 0 == retval )
     {
-        memcpy(destination, &(eee->supernode), sizeof(struct sockaddr_in));
+      memcpy(destination, &(eee->supernode), sizeof(struct sockaddr_in));
     }
 
   traceEvent(TRACE_INFO, "find_peer_address(%s) -> [socket=%s:%d]",
              macaddr_str( (char *)mac_address, mac_buf, sizeof(mac_buf)),
              intoa(ntohl(destination->addr_type.v4_addr), ip_buf, sizeof(ip_buf)),
              ntohs(destination->port));
-
-
 
   return retval;
 }
@@ -751,8 +752,8 @@ static void send_packet2net(n2n_edge_t * eee,
 #define IP4_SRCOFFSET 12
 #define IP4_ADDRSIZE  4
       /* Note: all elements of the_ip are in network order */
-      if( 0 != memcmp( decrypted_msg + ETH_FRAMESIZE + IP4_SRCOFFSET, 
-                       &(eee->device.ip_addr), 
+      if( 0 != memcmp( decrypted_msg + ETH_FRAMESIZE + IP4_SRCOFFSET,
+                       &(eee->device.ip_addr),
                        IP4_ADDRSIZE ) ) {
 	/* This is a packet that needs to be routed */
 	traceEvent(TRACE_INFO, "Discarding routed packet");
@@ -980,7 +981,7 @@ void readFromIPSocket( n2n_edge_t * eee )
 				    (u_int8_t *)decrypted_msg, len, eee->tf);
 
 	    if(len > 0) {
-                if(check_received_packet(eee, decrypted_msg, len) == 0) {
+	      if(check_received_packet(eee, decrypted_msg, len) == 0) {
 
 		if ( 0 == memcmp(hdr->dst_mac, eee->device.mac_addr, 6) )
 		  {
@@ -1020,14 +1021,14 @@ void readFromIPSocket( n2n_edge_t * eee )
 
 	    /* if ( 0 == memcmp(hdr->dst_mac, eee->device.mac_addr, 6) ) */
 	    {
-                if ( hdr->sent_by_supernode )
+	      if ( hdr->sent_by_supernode )
                 {
-                    /* Response to supernode registration. Supernode is not in the pending_peers list. */
+		  /* Response to supernode registration. Supernode is not in the pending_peers list. */
                 }
-                else
+	      else
                 {
-                    /* Move from pending_peers to known_peers; ignore if not in pending. */
-                    set_peer_operational( eee, hdr );
+		  /* Move from pending_peers to known_peers; ignore if not in pending. */
+		  set_peer_operational( eee, hdr );
                 }
 	    }
 
@@ -1047,7 +1048,7 @@ void readFromIPSocket( n2n_edge_t * eee )
 #ifdef WIN32
 static DWORD tunReadThread(LPVOID lpArg )
 {
-	n2n_edge_t *eee = (n2n_edge_t*)lpArg;
+  n2n_edge_t *eee = (n2n_edge_t*)lpArg;
 
   while(1) {
     readFromTAPSocket(eee);
@@ -1074,47 +1075,52 @@ static void startTunReadThread(n2n_edge_t *eee) {
 /* ***************************************************** */
 
 static void supernode2addr(n2n_edge_t * eee, char* addr) {
-	char *supernode_host = strtok(addr, ":");
+  char *supernode_host = strtok(addr, ":");
 
-	if(supernode_host) {
-		char *supernode_port = strtok(NULL, ":");
-		const struct addrinfo aihints = {0, PF_INET, 0, 0, 0, NULL, NULL, NULL};
-		struct addrinfo * ainfo = NULL;
-		int nameerr;
+  if(supernode_host) {
+    char *supernode_port = strtok(NULL, ":");
+    const struct addrinfo aihints = {0, PF_INET, 0, 0, 0, NULL, NULL, NULL};
+    struct addrinfo * ainfo = NULL;
+    int nameerr;
+    ipstr_t ip_buf;
 
-		if ( supernode_port )
-			eee->supernode.port = htons(atoi(supernode_port));
-		else
-			traceEvent(TRACE_WARNING, "Bad supernode parameter (-l <host:port>)");
+    if ( supernode_port )
+      eee->supernode.port = htons(atoi(supernode_port));
+    else
+      traceEvent(TRACE_WARNING, "Bad supernode parameter (-l <host:port>)");
 
-		nameerr = getaddrinfo( supernode_host, NULL, &aihints, &ainfo );
+    nameerr = getaddrinfo( supernode_host, NULL, &aihints, &ainfo );
 
-		if( 0 == nameerr ) 
-		{
-			struct sockaddr_in * saddr;
+    if( 0 == nameerr )
+      {
+	struct sockaddr_in * saddr;
 
-			/* ainfo s the head of a linked list if non-NULL. */
-			if ( ainfo && (PF_INET == ainfo->ai_family) )
-			{
-				/* It is definitely and IPv4 address -> sockaddr_in */
-				saddr = (struct sockaddr_in *)ainfo->ai_addr;
+	/* ainfo s the head of a linked list if non-NULL. */
+	if ( ainfo && (PF_INET == ainfo->ai_family) )
+	  {
+	    /* It is definitely and IPv4 address -> sockaddr_in */
+	    saddr = (struct sockaddr_in *)ainfo->ai_addr;
 
-				eee->supernode.addr_type.v4_addr = saddr->sin_addr.s_addr;
-			}
-			else
-			{
-				/* Should only return IPv4 addresses due to aihints. */
-				traceEvent(TRACE_WARNING, "Failed to resolve supernode IPv4 address for %s", supernode_host);
-			}
+	    eee->supernode.addr_type.v4_addr = saddr->sin_addr.s_addr;
+	  }
+	else
+	  {
+	    /* Should only return IPv4 addresses due to aihints. */
+	    traceEvent(TRACE_WARNING, "Failed to resolve supernode IPv4 address for %s", supernode_host);
+	  }
 
-			freeaddrinfo(ainfo); /* free everything allocated by getaddrinfo(). */
-			ainfo = NULL;
-		} else {
-			traceEvent(TRACE_WARNING, "Failed to resolve supernode host %s, assuming numeric", supernode_host);
-			eee->supernode.addr_type.v4_addr = inet_addr(supernode_host);
-		}
-	} else
-		traceEvent(TRACE_WARNING, "Wrong supernode parameter (-l <host:port>)");
+	freeaddrinfo(ainfo); /* free everything allocated by getaddrinfo(). */
+	ainfo = NULL;
+      } else {
+      traceEvent(TRACE_WARNING, "Failed to resolve supernode host %s, assuming numeric", supernode_host);
+      eee->supernode.addr_type.v4_addr = inet_addr(supernode_host);
+    }
+
+    traceEvent(TRACE_NORMAL, "Using supernode %s:%d",
+	       intoa(ntohl(eee->supernode.addr_type.v4_addr), ip_buf, sizeof(ip_buf)),
+	       ntohs(eee->supernode.port));
+  } else
+    traceEvent(TRACE_WARNING, "Wrong supernode parameter (-l <host:port>)");
 }
 
 /* ***************************************************** */
@@ -1125,7 +1131,6 @@ int main(int argc, char* argv[]) {
   int opt, local_port = 0 /* any port */;
   char *tuntap_dev_name = "edge0";
   char *ip_addr = NULL;
-  ipstr_t ip_buf;
 
 #ifndef WIN32
   uid_t userid=0; /* root is the only guaranteed ID */
@@ -1146,8 +1151,8 @@ int main(int argc, char* argv[]) {
   n2n_edge_t eee; /* single instance for this program */
 
   if (-1 == edge_init(&eee) ){
-      traceEvent( TRACE_ERROR, "Failed in edge_init" );
-      exit(1);
+    traceEvent( TRACE_ERROR, "Failed in edge_init" );
+    exit(1);
   }
 
   if( getenv( "N2N_KEY" )) {
@@ -1160,43 +1165,43 @@ int main(int argc, char* argv[]) {
   memset(&(eee.supernode), 0, sizeof(eee.supernode));
   eee.supernode.family = AF_INET;
 
-  linebuffer = (char *)malloc(MAX_CMDLINE_BUFFER_LENGTH); 
+  linebuffer = (char *)malloc(MAX_CMDLINE_BUFFER_LENGTH);
   if (!linebuffer) {
-      traceEvent( TRACE_ERROR, "Unable to allocate memory");
-      exit(1);
+    traceEvent( TRACE_ERROR, "Unable to allocate memory");
+    exit(1);
   }
   snprintf(linebuffer, MAX_CMDLINE_BUFFER_LENGTH, "%s",argv[0]);
   for(i=1;i<argc;++i) {
-      if(argv[i][0] == '@') {
-	  if (readConfFile(&argv[i][1], linebuffer)<0) exit(1); /* <<<<----- check */
-      } else
-	  if ((strlen(linebuffer)+strlen(argv[i])+2) < MAX_CMDLINE_BUFFER_LENGTH) {
-	      strncat(linebuffer, " ", 1);
-	      strncat(linebuffer, argv[i], strlen(argv[i]));
-	  } else {
-	      traceEvent( TRACE_ERROR, "too many argument");
-	      exit(1);
-	  }
+    if(argv[i][0] == '@') {
+      if (readConfFile(&argv[i][1], linebuffer)<0) exit(1); /* <<<<----- check */
+    } else
+      if ((strlen(linebuffer)+strlen(argv[i])+2) < MAX_CMDLINE_BUFFER_LENGTH) {
+	strncat(linebuffer, " ", 1);
+	strncat(linebuffer, argv[i], strlen(argv[i]));
+      } else {
+	traceEvent( TRACE_ERROR, "too many argument");
+	exit(1);
+      }
   }
   /*  strip trailing spaces */
-  while(strlen(linebuffer) && linebuffer[strlen(linebuffer)-1]==' ') 
-      linebuffer[strlen(linebuffer)-1]= '\0';
-  
+  while(strlen(linebuffer) && linebuffer[strlen(linebuffer)-1]==' ')
+    linebuffer[strlen(linebuffer)-1]= '\0';
+
   /* build the new argv from the linebuffer */
   effectiveargv = buildargv(linebuffer);
 
   effectiveargc =0;
   while (effectiveargv[effectiveargc]) ++effectiveargc;
 
-  if (linebuffer) { 
-      free(linebuffer);
-      linebuffer = NULL;
+  if (linebuffer) {
+    free(linebuffer);
+    linebuffer = NULL;
   }
 
   /* {int k;for(k=0;k<effectiveargc;++k)  printf("%s\n",effectiveargv[k]);} */
 
   optarg = NULL;
-  while((opt = getopt_long(effectiveargc, effectiveargv, "k:a:c:u:g:m:d:l:p:fvhrt", long_options, NULL)) != EOF) {
+  while((opt = getopt_long(effectiveargc, effectiveargv, "k:a:bc:u:g:m:d:l:p:fvhrt", long_options, NULL)) != EOF) {
     switch (opt) {
     case 'a':
       ip_addr = strdup(optarg);
@@ -1236,7 +1241,8 @@ int main(int argc, char* argv[]) {
       eee.allow_routing = 1;
       break;
     case 'l': /* supernode-list */
-      supernode2addr(&eee,optarg); 
+      snprintf(eee.supernode_ip, sizeof(eee.supernode_ip), "%s", optarg);
+      supernode2addr(&eee, eee.supernode_ip);
       break;
 #ifdef __linux__
     case 'd': /* tun-device */
@@ -1245,6 +1251,9 @@ int main(int argc, char* argv[]) {
 #endif
     case 't': /* Use HTTP tunneling */
       eee.sinfo.is_udp_socket = 0;
+      break;
+    case 'b':
+      eee.re_resolve_supernode_ip = 1;
       break;
     case 'p':
       local_port = atoi(optarg);
@@ -1287,10 +1296,6 @@ int main(int argc, char* argv[]) {
   }
 #endif
 
-  traceEvent(TRACE_NORMAL, "Using supernode %s:%d",
-	     intoa(ntohl(eee.supernode.addr_type.v4_addr), ip_buf, sizeof(ip_buf)),
-	     ntohs(eee.supernode.port));
-
   if(local_port > 0)
     traceEvent(TRACE_NORMAL, "Binding to local port %d", local_port);
 
@@ -1299,7 +1304,7 @@ int main(int argc, char* argv[]) {
   if(eee.sinfo.sock < 0) return(-1);
 
   if( !(eee.sinfo.is_udp_socket) ) {
-      int rc = connect_socket(eee.sinfo.sock, &(eee.supernode));
+    int rc = connect_socket(eee.sinfo.sock, &(eee.supernode));
 
     if(rc == -1) {
       traceEvent(TRACE_WARNING, "Error while connecting to supernode\n");
@@ -1309,12 +1314,12 @@ int main(int argc, char* argv[]) {
 
 #ifndef WIN32
   if ( fork_as_daemon )
-  {
+    {
       useSyslog=1; /* traceEvent output now goes to syslog. */
       daemon( 0, 0 );
-  }
+    }
 #endif
-  
+
   update_registrations(&eee);
 
   traceEvent(TRACE_NORMAL, "");
