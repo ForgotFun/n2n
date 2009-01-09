@@ -26,6 +26,11 @@ test -f ${TARFILE}
 
 echo "Building .deb"
 
+if [ -d ${TEMPDIR} ]; then
+    echo "Removing ${TEMPDIR} directory"
+    rm -rf ${TEMPDIR} >&2
+fi
+
 mkdir ${TEMPDIR}
 
 pushd ${TEMPDIR}

@@ -1,14 +1,14 @@
-This package was debianized by Richard Andrews <andrews@ntop.org> on
-Thu, 10 Jul 2008 22:38:02 +1000.
+This package was debianized by Jean-Baptiste Denis <jeanbaptiste.denis@gmail.com> on
+Thu, 20 Nov 2008 23:53:02 +1000.
 
-It was downloaded from <url://example.com>
+It was downloaded from http://www.ntop.org/n2n/
 
-Upstream Author(s): 
+Upstream Author(s):
 
-    <put author's name and email here>
-    <likewise for another author>
+    Luca Deri <deri@ntop.org>
+    Richard Andrews <andrews@ntop.org>
 
-Copyright: 
+Copyright:
 
     Copyright (C) 2008 Luca Deri
     Copyright (C) 2008 Richard Andrews
@@ -17,22 +17,7 @@ License:
 
     GPLv3
 
-The Debian packaging is (C) 2008, Richard Andrews <andrews@ntop.org>, Luca Deri
-<deri@ntop.org> and is licensed under the GPL, see
-`/usr/share/common-licenses/GPL'.
+The Debian packaging is (C) 2008, Richard Andrews <andrews@ntop.org>,
+Luca Deri <deri@ntop.org> and is licensed under the GPLv3, see
+`/usr/share/common-licenses/GPL-3'.
 
-   Copyright (C) 1996-2005 Markus Franz Xaver Johannes Oberhumer
-
-License:
-
-    GPLv2
-
-    Copyright (C) 1997-2000 The Cryptix Foundation Limited.
-    Copyright (C) 2000 Farm9.
-    Copyright (C) 2001 Frank Knobbe.
-
-    For Cryptix code:
-    Use, modification, copying and distribution of this software is subject
-    the terms and conditions of the Cryptix General Licence. You should have
-    received a copy of the Cryptix General Licence along with this library;
-    if not, you can download a copy from http://www.cryptix.org/ .

@@ -46,25 +46,17 @@ twofish.c
 twofish.h
 edge.8
 supernode.1
-debian
-debian/compat
-debian/postinst.ex
-debian/menu.ex
-debian/postrm.ex
-debian/n2n.doc-base.EX
 debian/changelog
-debian/watch.ex
-debian/README.Debian
-debian/preinst.ex
-debian/n2n-default.ex
-debian/init.d.lsb.ex
-debian/dirs
-debian/rules
-debian/prerm.ex
-debian/docs
+debian/compat
 debian/control
 debian/copyright
-debian/cron.d.ex
+debian/files
+debian/n2n.dirs
+debian/n2n.docs
+debian/n2n.install
+debian/n2n.manpages
+debian/README.Debian
+debian/rules
 "
 
 BASE=`pwd`
@@ -75,18 +67,32 @@ done
 
 echo "Found critical files. Proceeding." >&2
 
+if [ -d ${TEMPDIR} ]; then
+    echo "Removing ${TEMPDIR} directory"
+    rm -rf ${TEMPDIR} >&2
+fi
+
 mkdir ${TEMPDIR} >&2
 
 pushd ${TEMPDIR} >&2
 
 echo "Creating staging directory ${PWD}/${PKG_AND_VERSION}" >&2
+
+if [ -d ${PKG_AND_VERSION} ] ; then
+    echo "Removing ${PKG_AND_VERSION} directory"
+    rm -rf ${PKG_AND_VERSION} >&2
+fi
+
 mkdir ${PKG_AND_VERSION}
+
+pushd ${BASE} >&2
 
 echo "Copying in files" >&2
 for F in ${SOURCE_MANIFEST}; do
-    cp -a ${BASE}/$F ${PKG_AND_VERSION}/
+    cp --parents -a $F ${TEMPDIR}/${PKG_AND_VERSION}/
 done
 
+popd >&2
 
 TARFILE="${PKG_AND_VERSION}.tar.gz"
 echo "Creating ${TARFILE}" >&2
