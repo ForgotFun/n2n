@@ -1142,7 +1142,7 @@ int main(int argc, char* argv[]) {
   time_t lastStatus=0;
 
   char * device_mac=NULL;
-  char * encrypt_key;
+  char * encrypt_key=NULL;
 
   int     i, effectiveargc=0;
   char ** effectiveargv=NULL;
