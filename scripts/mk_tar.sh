@@ -50,7 +50,6 @@ debian/changelog
 debian/compat
 debian/control
 debian/copyright
-debian/files
 debian/n2n.dirs
 debian/n2n.docs
 debian/n2n.install
