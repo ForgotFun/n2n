@@ -48,9 +48,9 @@ $(N2N_LIB): $(N2N_OBJS)
 #	$(RANLIB) $@
 
 version.c:
-	echo $(N2N_VERSION) | sed -e 's/.*/char * version   = "&";/' > version.c
-	uname -p | sed -e 's/.*/char * osName    = "&";/' >> version.c
-	date +"%D %r" | sed -e 's/.*/char * buildDate = "&";/' >> version.c
+	@echo $(N2N_VERSION) | sed -e 's/.*/const char * version   = "&";/' > version.c
+	@uname -p | sed -e 's/.*/const char * osName    = "&";/' >> version.c
+	@date +"%D %r" | sed -e 's/.*/const char * buildDate = "&";/' >> version.c
 
 clean:
 	rm -rf $(N2N_OBJS) $(N2N_LIB) $(APPS) $(DOCS) *.dSYM *~ version.c
