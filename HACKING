@@ -186,11 +186,50 @@ up to date so contacting the host will be faster after an long idle time.
 MAN PAGES
 ---------
 
-Look at a non-installed man page like this (linux):
+Look at a non-installed man page like this (linux/UNIX):
 
 nroff -man edge.8 | less
 
 
+PACKET FORMAT
+-------------
+
+Version 1
+
+    0 1 2 3 4 5 6 7 8 9 0 1 2 3 4 5 6 7 8 9 0 1 2 3 4 5 6 7 8 9 0 1
+   +-+-+-+-+-+-+-+-+-+-+-+-+-+-+-+-+-+-+-+-+-+-+-+-+-+-+-+-+-+-+-+-+
+ 0 !   Version=1   ! Message Type  !      TTL      !    Origin     !
+   +-+-+-+-+-+-+-+-+-+-+-+-+-+-+-+-+-+-+-+-+-+-+-+-+-+-+-+-+-+-+-+-+
+ 4 !                                                               !
+ 8 !                        Community Name                         !
+12 !                                                               !
+16 !                                                               !
+   +-+-+-+-+-+-+-+-+-+-+-+-+-+-+-+-+-+-+-+-+-+-+-+-+-+-+-+-+-+-+-+-+
+20 ! Source MAC Address                                            :
+   +-+-+-+-+-+-+-+-+-+-+-+-+-+-+-+-+-+-+-+-+-+-+-+-+-+-+-+-+-+-+-+-+
+24 : Source MAC Address            ! Destination MAC Address       :
+   +-+-+-+-+-+-+-+-+-+-+-+-+-+-+-+-+-+-+-+-+-+-+-+-+-+-+-+-+-+-+-+-+
+28 :                                 Destination MAC Address       !
+   +-+-+-+-+-+-+-+-+-+-+-+-+-+-+-+-+-+-+-+-+-+-+-+-+-+-+-+-+-+-+-+-+
+32 ! Public IP Address                                             !
+   +-+-+-+-+-+-+-+-+-+-+-+-+-+-+-+-+-+-+-+-+-+-+-+-+-+-+-+-+-+-+-+-+
+36 ! Private IP Address                                            !
+   +-+-+-+-+-+-+-+-+-+-+-+-+-+-+-+-+-+-+-+-+-+-+-+-+-+-+-+-+-+-+-+-+
+40 ! Packet Type   ! Sequence Number                               :
+   +-+-+-+-+-+-+-+-+-+-+-+-+-+-+-+-+-+-+-+-+-+-+-+-+-+-+-+-+-+-+-+-+
+44 :  Seq Number   ! CRC32                                         :
+   +-+-+-+-+-+-+-+-+-+-+-+-+-+-+-+-+-+-+-+-+-+-+-+-+-+-+-+-+-+-+-+-+
+48 :               ! Ethernet Frame Payload
+   +-+-+-+-+-+-+-+-+
+
+The above packet format describes the header of IP packets carried between edge
+nodes. Payload is an encoded ethernet frame appended to the packet header. The
+ethernet payload is encrypted and compressed.
+
+When the payload is created it is first encrypted with twofish, then compressed
+using lzo1x_compress. When the payload is decoded it is first decompressed using
+lzo1x_decompress_safe then decrypted using twofish.
+
 -------
 
-April 2008 - Richard Andrews <bbmaj7@yahoo.com.au>
+January 2009 - Richard Andrews <bbmaj7@yahoo.com.au>
