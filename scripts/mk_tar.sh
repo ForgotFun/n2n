@@ -61,7 +61,7 @@ debian/rules
 BASE=`pwd`
 
 for F in ${SOURCE_MANIFEST}; do
-    test -e $F || exit_fail "Wrong directory. Please execute from n2n directory."; >&2
+    test -e $F || exit_fail "Cannot find $F. Maybe you're in the wrong directory. Please execute from n2n directory."; >&2
 done
 
 echo "Found critical files. Proceeding." >&2
