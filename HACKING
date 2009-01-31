@@ -211,16 +211,18 @@ Version 1
    +-+-+-+-+-+-+-+-+-+-+-+-+-+-+-+-+-+-+-+-+-+-+-+-+-+-+-+-+-+-+-+-+
 28 :                                 Destination MAC Address       !
    +-+-+-+-+-+-+-+-+-+-+-+-+-+-+-+-+-+-+-+-+-+-+-+-+-+-+-+-+-+-+-+-+
-32 ! Public IP Address                                             !
+32 ! Public Peer                                                   !
    +-+-+-+-+-+-+-+-+-+-+-+-+-+-+-+-+-+-+-+-+-+-+-+-+-+-+-+-+-+-+-+-+
-36 ! Private IP Address                                            !
+36 :                                               ! Private Peer
    +-+-+-+-+-+-+-+-+-+-+-+-+-+-+-+-+-+-+-+-+-+-+-+-+-+-+-+-+-+-+-+-+
-40 ! Packet Type   ! Sequence Number                               :
+40 ! Private Peer                                                  !
    +-+-+-+-+-+-+-+-+-+-+-+-+-+-+-+-+-+-+-+-+-+-+-+-+-+-+-+-+-+-+-+-+
-44 :  Seq Number   ! CRC32                                         :
+44 : Private Peer                  ! Packet Type   ! Seq Number    :
    +-+-+-+-+-+-+-+-+-+-+-+-+-+-+-+-+-+-+-+-+-+-+-+-+-+-+-+-+-+-+-+-+
-48 :               ! Ethernet Frame Payload
-   +-+-+-+-+-+-+-+-+
+48 :                                  Seq Number   ! CRC32                                         :
+   +-+-+-+-+-+-+-+-+-+-+-+-+-+-+-+-+-+-+-+-+-+-+-+-+-+-+-+-+-+-+-+-+
+52 : CRC32                                         ! Payload
+   +-+-+-+-+-+-+-+-+-+-+-+-+-+-+-+-+-+-+-+-+-+-+-+-+
 
 The above packet format describes the header of IP packets carried between edge
 nodes. Payload is an encoded ethernet frame appended to the packet header. The
