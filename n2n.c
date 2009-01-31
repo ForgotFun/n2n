@@ -385,7 +385,7 @@ void fill_standard_header_fields(n2n_sock_info_t * sinfo,
 				 struct n2n_packet_header *hdr, char *src_mac) {
   socklen_t len = sizeof(hdr->private_ip);
   memset(hdr, 0, N2N_PKT_HDR_SIZE);
-  hdr->version = N2N_VERSION;
+  hdr->version = N2N_PKT_VERSION;
   hdr->crc = 0; // FIX
   if(src_mac != NULL) memcpy(hdr->src_mac, src_mac, 6);
   getsockname(sinfo->sock, (struct sockaddr*)&hdr->private_ip, &len);

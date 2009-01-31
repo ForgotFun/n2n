@@ -323,7 +323,7 @@ static void handle_packet(char *packet, u_int packet_len,
 
         unmarshall_n2n_packet_header( hdr, (u_int8_t *)packet );
 
-        if(hdr->version != N2N_VERSION) {
+        if(hdr->version != N2N_PKT_VERSION) {
             traceEvent(TRACE_WARNING,
                        "Received packet with unknown protocol version (%d): discarded\n",
                        hdr->version);

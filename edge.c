@@ -953,7 +953,7 @@ void readFromIPSocket( n2n_edge_t * eee )
 		   hdr->sent_by_supernode ? "supernode" : "peer",
 		   macaddr_str(hdr->dst_mac, mac_buf, sizeof(mac_buf)));
 
-	if(hdr->version != N2N_VERSION) {
+	if(hdr->version != N2N_PKT_VERSION) {
 	  traceEvent(TRACE_WARNING,
 		     "Received packet with unknown protocol version (%d): discarded\n",
 		     hdr->version);

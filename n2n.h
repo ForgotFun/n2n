@@ -113,7 +113,7 @@ typedef struct tuntap_dev {
 #endif /* #ifndef WIN32 */
 
 #define QUICKLZ               1
-#define N2N_VERSION           1
+#define N2N_PKT_VERSION       1
 
 #define MSG_TYPE_REGISTER     1 /* FIX invece di usare il sender del pacchetto scriverlo nel pacchetto stesso */
 #define MSG_TYPE_DEREGISTER   2
