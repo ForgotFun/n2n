@@ -445,6 +445,10 @@ int main(int argc, char* argv[]) {
   n2n_sock_info_t udp_sinfo;
   n2n_sock_info_t tcp_sinfo;
 
+#ifdef WIN32
+  initWin32();
+#endif
+
   optarg = NULL;
   while((opt = getopt_long(argc, argv, "l:vh", long_options, NULL)) != EOF) {
     switch (opt) {

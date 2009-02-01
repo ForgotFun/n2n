@@ -1171,6 +1171,12 @@ int main(int argc, char* argv[]) {
     exit(1);
   }
   snprintf(linebuffer, MAX_CMDLINE_BUFFER_LENGTH, "%s",argv[0]);
+
+#ifdef WIN32
+	for(i=0; i<strlen(linebuffer); i++)
+		if(linebuffer[i] == '\\') linebuffer[i] = '/';
+#endif
+
   for(i=1;i<argc;++i) {
     if(argv[i][0] == '@') {
       if (readConfFile(&argv[i][1], linebuffer)<0) exit(1); /* <<<<----- check */

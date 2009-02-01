@@ -153,7 +153,11 @@ static char *nextchar;
    for unrecognized options.  */
 
 #ifndef DARWIN
+#ifdef WIN32
+int opterr = 0;
+#else
 int opterr = 1;
+#endif
 #endif
 
 /* Set to an option character which was unrecognized.
