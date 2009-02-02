@@ -470,23 +470,19 @@ u_int receive_data(n2n_sock_info_t * sinfo,
 #endif
     return(0);
   } else if(len > MIN_COMPRESSED_PKT_LEN) {
-    char decompressed[2048];
+#define N2N_DECOMPRESS_BUFSIZE 2048
+    char decompressed[N2N_DECOMPRESS_BUFSIZE];
     int rc;
-    lzo_uint decompressed_len;
+    lzo_uint decompressed_len=N2N_DECOMPRESS_BUFSIZE;
+    size_t insize = len-N2N_PKT_HDR_SIZE;
 
     if(decompress_data) {
-#if 0
-      rc = lzo1x_decompress((u_char*)&packet[N2N_PKT_HDR_SIZE],
-                            len-N2N_PKT_HDR_SIZE,
-                            (u_char*)decompressed, &decompressed_len, NULL);
-#else
       rc = lzo1x_decompress_safe((u_char*)&packet[N2N_PKT_HDR_SIZE],
-                         len-N2N_PKT_HDR_SIZE,
-                         (u_char*)decompressed, &decompressed_len, NULL);
-#endif
+                                 insize,
+                                 (u_char*)decompressed, &decompressed_len, NULL);
 
       if(rc == LZO_E_OK)
-		traceEvent(TRACE_INFO, "%u bytes decompressed into %u", len, decompressed_len);
+	traceEvent(TRACE_INFO, "%u bytes decompressed into %u", insize, decompressed_len);
 
       if(packet_len > decompressed_len) {
 	memcpy(&packet[N2N_PKT_HDR_SIZE], decompressed, decompressed_len);
