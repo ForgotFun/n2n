@@ -22,7 +22,7 @@ function exit_fail()
 }
 
 PACKAGE="n2n"
-PKG_VERSION="1.2"
+PKG_VERSION="1.3"
 PKG_AND_VERSION="${PACKAGE}-${PKG_VERSION}"
 
 TEMPDIR="tmp"

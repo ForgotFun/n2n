@@ -43,8 +43,8 @@ line in it:
 
 To build an RPM the hard way follow these steps.
 
-$ cp -a n2ndir n2n-1.2
-$ tar czf n2n-1.2.tar.gz n2n-1.2
-$ mv n2n-1.2.tar.gz /usr/src/redhat/SOURCES
+$ cp -a n2ndir n2n-1.3
+$ tar czf n2n-1.3.tar.gz n2n-1.3
+$ mv n2n-1.3.tar.gz /usr/src/redhat/SOURCES
 $ cp n2ndir/n2n.spec /usr/src/redhat/SPECS
 $ rpmbuild -bb n2n.spec

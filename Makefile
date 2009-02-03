@@ -1,11 +1,12 @@
 
-N2N_VERSION="1.2.2"
+N2N_VERSION="1.3"
 
 
 ########
 
 CC=gcc
-CFLAGS+=-g -Wall -Wshadow -Wpointer-arith -Wmissing-declarations -Wnested-externs #-static
+DEBUG?=-g
+CFLAGS+=$(DEBUG) -Wall -Wshadow -Wpointer-arith -Wmissing-declarations -Wnested-externs
 
 INSTALL=install
 MKDIR=mkdir -p
