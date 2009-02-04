@@ -406,6 +406,7 @@ void send_ack(n2n_sock_info_t * sinfo,
   u_int8_t pkt[ N2N_PKT_HDR_SIZE ];
   size_t len = sizeof(hdr);
   size_t len2;
+  int compress_data = N2N_COMPRESSION_ENABLED;
 
   fill_standard_header_fields(sinfo, &hdr, src_mac);
   hdr.msg_type = MSG_TYPE_ACK_RESPONSE;
@@ -415,7 +416,7 @@ void send_ack(n2n_sock_info_t * sinfo,
   len2=marshall_n2n_packet_header( pkt, &hdr );
   assert( len2 == len );
 
-  send_packet(sinfo, (char*)pkt, &len, remote_peer, 1);
+  send_packet(sinfo, (char*)pkt, &len, remote_peer, compress_data);
 }
 
 /* *********************************************** */

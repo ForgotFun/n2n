@@ -63,7 +63,7 @@ static void send_register_ack( n2n_sock_info_t * sinfo,
     /* leave IP sockets unfilled. */
 
     marshall_n2n_packet_header( pkt, &hdr );
-    send_packet(sinfo, (char *)pkt, &len, destination_peer, 1);
+    send_packet(sinfo, (char *)pkt, &len, destination_peer, N2N_COMPRESSION_ENABLED);
 }
 
 static void register_peer(struct n2n_packet_header *hdr,

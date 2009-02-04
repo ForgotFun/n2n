@@ -124,6 +124,12 @@ typedef struct tuntap_dev {
 #define COMMUNITY_LEN           16
 #define MIN_COMPRESSED_PKT_LEN  32
 
+/* Set N2N_COMPRESSION_ENABLED to 0 to disable lzo1x compression of ethernet
+ * frames. Doing this will break compatibility with the standard n2n packet
+ * format so do it only for experimentation. All edges must be built with the
+ * same value if they are to understand each other. */
+#define N2N_COMPRESSION_ENABLED 1
+
 /* Maximum enum value is 255 due to marshalling into 1 byte */
 enum packet_type {
   packet_unreliable_data = 0,  /* no ACK needed */

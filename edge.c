@@ -303,7 +303,7 @@ static void send_register( n2n_edge_t * eee,
   memcpy(hdr.community_name, eee->community_name, COMMUNITY_LEN);
 
   marshall_n2n_packet_header( (u_int8_t *)pkt, &hdr );
-  send_packet( &(eee->sinfo), pkt, &len, remote_peer, 1 );
+  send_packet( &(eee->sinfo), pkt, &len, remote_peer, N2N_COMPRESSION_ENABLED );
 
   traceEvent(TRACE_INFO, "Sent %s message to %s:%d",
              ((hdr.msg_type==MSG_TYPE_REGISTER)?"MSG_TYPE_REGISTER":"MSG_TYPE_REGISTER_ACK"),
@@ -325,7 +325,7 @@ static void send_deregister(n2n_edge_t * eee,
   memcpy(hdr.community_name, eee->community_name, COMMUNITY_LEN);
 
   marshall_n2n_packet_header( (u_int8_t *)pkt, &hdr );
-  send_packet( &(eee->sinfo), pkt, &len, remote_peer, 1);
+  send_packet( &(eee->sinfo), pkt, &len, remote_peer, N2N_COMPRESSION_ENABLED);
 }
 
 /* *********************************************** */
@@ -790,7 +790,8 @@ static void send_packet2net(n2n_edge_t * eee,
 	       macaddr_str((char*)eh->ether_shost, mac_buf, sizeof(mac_buf)),
 	       macaddr_str((char*)eh->ether_dhost, mac2_buf, sizeof(mac2_buf)));
 
-  data_sent_len = reliable_sendto( &(eee->sinfo), packet, &len, &destination, 1);
+  data_sent_len = reliable_sendto( &(eee->sinfo), packet, &len, &destination, 
+                                   N2N_COMPRESSION_ENABLED);
 
   if(data_sent_len != len)
     traceEvent(TRACE_WARNING, "sendto() [sent=%d][attempted_to_send=%d] [%s]\n",
@@ -927,7 +928,8 @@ void readFromIPSocket( n2n_edge_t * eee )
   struct n2n_packet_header hdr_storage;
 
   len = receive_data( &(eee->sinfo), packet, sizeof(packet), &sender,
-                      &discarded_pkt, (char*)(eee->device.mac_addr), 1, &hdr_storage);
+                      &discarded_pkt, (char*)(eee->device.mac_addr), 
+                      N2N_COMPRESSION_ENABLED, &hdr_storage);
 
   if(len <= 0) return;
 
