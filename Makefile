@@ -6,7 +6,8 @@ N2N_VERSION="1.3"
 
 CC=gcc
 DEBUG?=-g
-CFLAGS+=$(DEBUG) -Wall -Wshadow -Wpointer-arith -Wmissing-declarations -Wnested-externs
+WARN?=-Wall -Wshadow -Wpointer-arith -Wmissing-declarations -Wnested-externs
+CFLAGS+=$(DEBUG) $(WARN) $(OPTIONS)
 
 INSTALL=install
 MKDIR=mkdir -p
