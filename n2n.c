@@ -75,10 +75,13 @@ extern void peer_addr2sockaddr_in(const struct peer_addr *in, struct sockaddr_in
 /* ************************************** */
 
 static
-int marshall_peer_addr( u_int8_t * buf, const struct peer_addr * s )
+int marshall_peer_addr( u_int8_t * buf, size_t * offset, const struct peer_addr * s )
 {
-  memcpy( buf, s, sizeof(struct peer_addr));
-  buf += sizeof(struct peer_addr);
+ /* RA: I'm pretty sure that this is broken. There is no guarantee that the
+  * peer_addr structure is packed. This will always work between like hosts but
+  * is almost certainly broken between different host types. */
+  memcpy( buf + *offset, s, sizeof(struct peer_addr));
+  *offset += sizeof(struct peer_addr);
 
   return sizeof(struct peer_addr); /* bytes written */
 }
@@ -86,74 +89,80 @@ int marshall_peer_addr( u_int8_t * buf, const struct peer_addr * s )
 /* ************************************** */
 
 static
-int marshall_uint32( u_int8_t * buf, u_int32_t val )
+int marshall_uint32( u_int8_t * buf, size_t * offset, u_int32_t val )
 {
-  u_int32_t * nu32 = (u_int32_t *)buf;
-  *nu32 = htonl(val);
+    buf[*offset + 0] = ((val >> 24) & 0xff);
+    buf[*offset + 1] = ((val >> 16) & 0xff);
+    buf[*offset + 2] = ((val >>  8) & 0xff);
+    buf[*offset + 3] = ((val      ) & 0xff);
 
-  return 4;
+    *offset += 4;
+    return 4;
 }
 
 /* ************************************** */
 
 int marshall_n2n_packet_header( u_int8_t * buf, const struct n2n_packet_header * hdr )
 {
-  u_int8_t * bufStart = buf;
+  size_t offset = 0;
 
   print_header( "Marshalling ", hdr );
 
-  *buf = hdr->version;
-  ++buf;
+  *(buf+offset) = hdr->version;
+  ++offset;
 
-  *buf = hdr->msg_type;
-  ++buf;
+  *(buf+offset) = hdr->msg_type;
+  ++offset;
 
-  *buf = hdr->ttl;
-  ++buf;
+  *(buf+offset) = hdr->ttl;
+  ++offset;
 
-  *buf = hdr->sent_by_supernode;
-  ++buf;
+  *(buf+offset) = hdr->sent_by_supernode;
+  ++offset;
 
-  memcpy( buf, hdr->community_name, COMMUNITY_LEN );
-  buf += COMMUNITY_LEN;
+  memcpy( buf+offset, hdr->community_name, COMMUNITY_LEN );
+  offset += COMMUNITY_LEN;
 
-  memcpy( buf, hdr->src_mac, 6 );
-  buf += 6;
+  memcpy( buf+offset, hdr->src_mac, 6 );
+  offset += 6;
 
-  memcpy( buf, hdr->dst_mac, 6 );
-  buf += 6;
+  memcpy( buf+offset, hdr->dst_mac, 6 );
+  offset += 6;
 
-  buf += marshall_peer_addr( buf, &(hdr->public_ip) );
-  buf += marshall_peer_addr( buf, &(hdr->private_ip) );
+  marshall_peer_addr( buf, &offset, &(hdr->public_ip) );
+  marshall_peer_addr( buf, &offset, &(hdr->private_ip) );
 
-  *buf = (hdr->pkt_type & 0xff);
-  ++buf;
+  *(buf+offset) = (hdr->pkt_type & 0xff);
+  ++offset;
 
-  buf += marshall_uint32( buf, hdr->sequence_id );
-  buf += marshall_uint32( buf, hdr->crc );
+  marshall_uint32( buf, &offset, hdr->sequence_id );
+  marshall_uint32( buf, &offset, hdr->crc );
 
-  return (buf - bufStart);
+  return offset;
 }
 
 /* ************************************** */
 
 static
-int unmarshall_peer_addr( struct peer_addr * s,
+int unmarshall_peer_addr( struct peer_addr * s, size_t * offset,
 			  const u_int8_t * buf )
 {
-  memcpy(s, buf, sizeof(struct peer_addr));
-  buf += sizeof(struct peer_addr);
+  memcpy(s, buf + *offset, sizeof(struct peer_addr));
+  *offset += sizeof(struct peer_addr);
   return (sizeof(struct peer_addr)); /* bytes written */
 }
 
 /* ************************************** */
 
 static
-int unmarshall_uint32( u_int32_t * val, const u_int8_t * buf )
+int unmarshall_uint32( u_int32_t * val, size_t * offset, const u_int8_t * buf )
 {
-  u_int32_t * nu32 = (u_int32_t *)buf;
-  *val = ntohl(*nu32);
+  *val  = ( (buf[*offset + 0] & 0xff) << 24 );
+  *val |= ( (buf[*offset + 1] & 0xff) << 16 );
+  *val |= ( (buf[*offset + 2] & 0xff) <<  8 );
+  *val |= ( (buf[*offset + 3] & 0xff)       );
 
+  *offset += 4;
   return 4;
 }
 
@@ -161,41 +170,41 @@ int unmarshall_uint32( u_int32_t * val, const u_int8_t * buf )
 
 int unmarshall_n2n_packet_header( struct n2n_packet_header * hdr, const u_int8_t * buf )
 {
-  const u_int8_t * bufStart = buf;
+  size_t offset=0;
 
-  hdr->version = *buf;
-  ++buf;
+  hdr->version = *(buf + offset);
+  ++offset;
 
-  hdr->msg_type = *buf;
-  ++buf;
+  hdr->msg_type = *(buf + offset);
+  ++offset;
 
-  hdr->ttl = *buf;
-  ++buf;
+  hdr->ttl = *(buf + offset);
+  ++offset;
 
-  hdr->sent_by_supernode = *buf;
-  ++buf;
+  hdr->sent_by_supernode = *(buf + offset);
+  ++offset;
 
-  memcpy( hdr->community_name, buf, COMMUNITY_LEN );
-  buf += COMMUNITY_LEN;
+  memcpy( hdr->community_name, (buf + offset), COMMUNITY_LEN );
+  offset += COMMUNITY_LEN;
 
-  memcpy( hdr->src_mac, buf, 6 );
-  buf += 6;
+  memcpy( hdr->src_mac, (buf + offset), 6 );
+  offset += 6;
 
-  memcpy( hdr->dst_mac, buf, 6 );
-  buf += 6;
+  memcpy( hdr->dst_mac, (buf + offset), 6 );
+  offset += 6;
 
-  buf += unmarshall_peer_addr( &(hdr->public_ip), buf );
-  buf += unmarshall_peer_addr( &(hdr->private_ip), buf );
+  unmarshall_peer_addr( &(hdr->public_ip),  &offset, buf );
+  unmarshall_peer_addr( &(hdr->private_ip), &offset, buf );
 
-  hdr->pkt_type = (*buf & 0xff); /* Make sure only 8 bits are copied. */
-  ++buf;
+  hdr->pkt_type = (*(buf + offset) & 0xff); /* Make sure only 8 bits are copied. */
+  ++offset;
 
-  buf += unmarshall_uint32( &(hdr->sequence_id), buf );
-  buf += unmarshall_uint32( &(hdr->crc), buf );
+  unmarshall_uint32( &(hdr->sequence_id), &offset, buf );
+  unmarshall_uint32( &(hdr->crc),         &offset, buf );
 
   print_header( "Unmarshalled ", hdr );
 
-  return (buf - bufStart);
+  return offset;
 }
 
 /* ************************************** */
