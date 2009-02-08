@@ -7,7 +7,13 @@ N2N_VERSION="1.3"
 CC=gcc
 DEBUG?=-g
 WARN?=-Wall -Wshadow -Wpointer-arith -Wmissing-declarations -Wnested-externs
-CFLAGS+=$(DEBUG) $(WARN) $(OPTIONS)
+
+#Ultrasparc64 users experiencing SIGBUS should try the following gcc options
+#(thanks to Robert Gibbon)
+PLATOPTS_SPARC64=-mcpu=ultrasparc -pipe -fomit-frame-pointer -ffast-math -finline-functions -fweb -frename-registers -mapp-regs
+
+
+CFLAGS+=$(DEBUG) $(WARN) $(OPTIONS) $(PLATOPTS)
 
 INSTALL=install
 MKDIR=mkdir -p
