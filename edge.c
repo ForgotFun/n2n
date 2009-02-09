@@ -305,7 +305,7 @@ static void send_register( n2n_edge_t * eee,
   marshall_n2n_packet_header( (u_int8_t *)pkt, &hdr );
   send_packet( &(eee->sinfo), pkt, &len, remote_peer, N2N_COMPRESSION_ENABLED );
 
-  traceEvent(TRACE_INFO, "Sent %s message to %s:%d",
+  traceEvent(TRACE_INFO, "Sent %s message to %s:%hd",
              ((hdr.msg_type==MSG_TYPE_REGISTER)?"MSG_TYPE_REGISTER":"MSG_TYPE_REGISTER_ACK"),
 	     intoa(ntohl(remote_peer->addr_type.v4_addr), ip_buf, sizeof(ip_buf)),
 	     ntohs(remote_peer->port));
@@ -377,7 +377,7 @@ void try_send_register( n2n_edge_t * eee,
       traceEvent( TRACE_NORMAL, "Pending peers list size=%ld",
 		  peer_list_size( eee->pending_peers ) );
 
-      traceEvent( TRACE_NORMAL, "Sending REGISTER request to %s:%d",
+      traceEvent( TRACE_NORMAL, "Sending REGISTER request to %s:%hd",
 		  intoa(ntohl(scan->public_ip.addr_type.v4_addr), ip_buf, sizeof(ip_buf)),
 		  ntohs(scan->public_ip.port));
 
@@ -396,7 +396,7 @@ void try_send_register( n2n_edge_t * eee,
 	  /* over-write supernode-based socket with direct socket. */
 	  scan->public_ip = hdr->public_ip;
 
-	  traceEvent( TRACE_NORMAL, "Sending additional REGISTER request to %s:%d",
+	  traceEvent( TRACE_NORMAL, "Sending additional REGISTER request to %s:%hd",
 		      intoa(ntohl(scan->public_ip.addr_type.v4_addr), ip_buf, sizeof(ip_buf)),
 		      ntohs(scan->public_ip.port));
 
@@ -473,7 +473,7 @@ void set_peer_operational( n2n_edge_t * eee, const struct n2n_packet_header * hd
 
       scan->public_ip = hdr->public_ip;
 
-      traceEvent(TRACE_INFO, "=== new peer [mac=%s][socket=%s:%d]",
+      traceEvent(TRACE_INFO, "=== new peer [mac=%s][socket=%s:%hd]",
 		 macaddr_str(scan->mac_addr, mac_buf, sizeof(mac_buf)),
 		 intoa(ntohl(scan->public_ip.addr_type.v4_addr), ip_buf, sizeof(ip_buf)),
 		 ntohs(scan->public_ip.port));
@@ -501,7 +501,7 @@ void trace_registrations( struct peer_info * scan )
 
   while ( scan )
     {
-      traceEvent(TRACE_INFO, "=== peer [mac=%s][socket=%s:%d]",
+      traceEvent(TRACE_INFO, "=== peer [mac=%s][socket=%s:%hd]",
 		 macaddr_str(scan->mac_addr, mac_buf, sizeof(mac_buf)),
 		 intoa(ntohl(scan->public_ip.addr_type.v4_addr), ip_buf, sizeof(ip_buf)),
 		 ntohs(scan->public_ip.port));
@@ -563,7 +563,7 @@ static void update_peer_address(n2n_edge_t * eee,
     {
       if ( 0 == hdr->sent_by_supernode )
         {
-	  traceEvent( TRACE_NORMAL, "Peer changed public socket, Was %s:%d",
+	  traceEvent( TRACE_NORMAL, "Peer changed public socket, Was %s:%hd",
 		      intoa(ntohl(hdr->public_ip.addr_type.v4_addr), ip_buf, sizeof(ip_buf)),
 		      ntohs(hdr->public_ip.port));
 
@@ -686,7 +686,7 @@ static int find_peer_destination(n2n_edge_t * eee,
 	     mac_address[3] & 0xFF, mac_address[4] & 0xFF, mac_address[5] & 0xFF);
 
   while(scan != NULL) {
-    traceEvent(TRACE_INFO, "Evaluating peer [MAC=%02X:%02X:%02X:%02X:%02X:%02X][ip=%s:%d]",
+    traceEvent(TRACE_INFO, "Evaluating peer [MAC=%02X:%02X:%02X:%02X:%02X:%02X][ip=%s:%hd]",
 	       scan->mac_addr[0] & 0xFF, scan->mac_addr[1] & 0xFF, scan->mac_addr[2] & 0xFF,
 	       scan->mac_addr[3] & 0xFF, scan->mac_addr[4] & 0xFF, scan->mac_addr[5] & 0xFF,
 	       intoa(ntohl(scan->public_ip.addr_type.v4_addr), ip_buf, sizeof(ip_buf)),
@@ -707,7 +707,7 @@ static int find_peer_destination(n2n_edge_t * eee,
       memcpy(destination, &(eee->supernode), sizeof(struct sockaddr_in));
     }
 
-  traceEvent(TRACE_INFO, "find_peer_address(%s) -> [socket=%s:%d]",
+  traceEvent(TRACE_INFO, "find_peer_address(%s) -> [socket=%s:%hd]",
              macaddr_str( (char *)mac_address, mac_buf, sizeof(mac_buf)),
              intoa(ntohl(destination->addr_type.v4_addr), ip_buf, sizeof(ip_buf)),
              ntohs(destination->port));
@@ -781,7 +781,7 @@ static void send_packet2net(n2n_edge_t * eee,
   len += N2N_PKT_HDR_SIZE;
 
   if(find_peer_destination(eee, eh->ether_dhost, &destination))
-    traceEvent(TRACE_INFO, "** Going direct [dst_mac=%s][dest=%s:%d]",
+    traceEvent(TRACE_INFO, "** Going direct [dst_mac=%s][dest=%s:%hd]",
 	       macaddr_str((char*)eh->ether_dhost, mac_buf, sizeof(mac_buf)),
 	       intoa(ntohl(destination.addr_type.v4_addr), ip_buf, sizeof(ip_buf)),
 	       ntohs(destination.port));
@@ -946,7 +946,7 @@ void readFromIPSocket( n2n_edge_t * eee )
       else {
 	struct n2n_packet_header *hdr = &hdr_storage;
 
-	traceEvent(TRACE_INFO, "Received packet from %s:%d",
+	traceEvent(TRACE_INFO, "Received packet from %s:%hd",
 		   intoa(ntohl(sender.addr_type.v4_addr), ip_buf, sizeof(ip_buf)),
 		   ntohs(sender.port));
 
@@ -1006,7 +1006,7 @@ void readFromIPSocket( n2n_edge_t * eee )
 	    /* else silently ignore empty packet. */
 
 	  } else if(hdr->msg_type == MSG_TYPE_REGISTER) {
-	    traceEvent(TRACE_INFO, "Received registration request from remote peer [ip=%s:%d]",
+	    traceEvent(TRACE_INFO, "Received registration request from remote peer [ip=%s:%hd]",
 		       intoa(ntohl(hdr->public_ip.addr_type.v4_addr), ip_buf, sizeof(ip_buf)),
 		       ntohs(hdr->public_ip.port));
 	    if ( 0 == memcmp(hdr->dst_mac, (eee->device.mac_addr), 6) )
@@ -1017,7 +1017,7 @@ void readFromIPSocket( n2n_edge_t * eee )
 
 	    send_register(eee, &hdr->public_ip, 1); /* Send ACK back */
 	  } else if(hdr->msg_type == MSG_TYPE_REGISTER_ACK) {
-	    traceEvent(TRACE_NORMAL, "Received REGISTER_ACK from remote peer [ip=%s:%d]",
+	    traceEvent(TRACE_NORMAL, "Received REGISTER_ACK from remote peer [ip=%s:%hd]",
 		       intoa(ntohl(hdr->public_ip.addr_type.v4_addr), ip_buf, sizeof(ip_buf)),
 		       ntohs(hdr->public_ip.port));
 
@@ -1118,7 +1118,7 @@ static void supernode2addr(n2n_edge_t * eee, char* addr) {
       eee->supernode.addr_type.v4_addr = inet_addr(supernode_host);
     }
 
-    traceEvent(TRACE_NORMAL, "Using supernode %s:%d",
+    traceEvent(TRACE_NORMAL, "Using supernode %s:%hd",
 	       intoa(ntohl(eee->supernode.addr_type.v4_addr), ip_buf, sizeof(ip_buf)),
 	       ntohs(eee->supernode.port));
   } else
