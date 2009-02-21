@@ -46,7 +46,7 @@ static void print_header( const char * msg, const struct n2n_packet_header * hdr
   ipstr_t buf;
   ipstr_t buf2;
 
-  traceEvent(TRACE_INFO, "%s hdr: public_ip=(%d)%s:%hd, private_ip=(%d)%s:%hd", msg,
+  traceEvent(TRACE_INFO, "%s hdr: public_ip=(%d)%s:%d, private_ip=(%d)%s:%d", msg,
 	     hdr->public_ip.family,
 	     intoa(ntohl(hdr->public_ip.addr_type.v4_addr), buf, sizeof(buf)),
 	     ntohs(hdr->public_ip.port),
@@ -302,7 +302,7 @@ void traceEvent(int eventTraceLevel, char* file, int line, char * format, ...) {
     char theDate[N2N_TRACE_DATESIZE];
     char *extra_msg = "";
     time_t theTime = time(NULL);
-
+	int i;
 
     /* We have two paths - one if we're logging, one if we aren't
      *   Note that the no-log case is those systems which don't support it (WIN32),
@@ -340,7 +340,8 @@ void traceEvent(int eventTraceLevel, char* file, int line, char * format, ...) {
     }
 #else
     /* this is the WIN32 code */
-    snprintf(out_buf, sizeof(out_buf), "%s [%11s:%4d] %s%s", theDate, file, line, extra_msg, buf);
+	for(i=strlen(file)-1; i>0; i--) if(file[i] == '\\') { i++; break; };
+    snprintf(out_buf, sizeof(out_buf), "%s [%11s:%4d] %s%s", theDate, &file[i], line, extra_msg, buf);
     printf("%s\n", out_buf);
     fflush(stdout);
 #endif
@@ -527,12 +528,12 @@ u_int receive_data(n2n_sock_info_t * sinfo,
       pkt_type = "???";
     }
 
-    traceEvent(TRACE_INFO, "+++ Received %s packet [rcvd_from=%s:%hd][msg_type=%s][seq_id=%d]",
+    traceEvent(TRACE_INFO, "+++ Received %s packet [rcvd_from=%s:%d][msg_type=%s][seq_id=%d]",
 	       pkt_type,
 	       intoa(ntohl(from->addr_type.v4_addr), from_ip_buf, sizeof(from_ip_buf)),
 	       ntohs(from->port), msg_type2str(hdr->msg_type),
 	       hdr->sequence_id);
-    traceEvent(TRACE_INFO, "    [src_mac=%s][dst_mac=%s][original_sender=%s:%hd]",
+    traceEvent(TRACE_INFO, "    [src_mac=%s][dst_mac=%s][original_sender=%s:%d]",
 	       macaddr_str(hdr->src_mac, src_mac_buf, sizeof(src_mac_buf)),
 	       macaddr_str(hdr->dst_mac, dst_mac_buf, sizeof(dst_mac_buf)),
 	       intoa(ntohl(hdr->public_ip.addr_type.v4_addr), ip_buf, sizeof(ip_buf)),
@@ -654,7 +655,7 @@ u_int send_data(n2n_sock_info_t * sinfo,
     if(rc == -1) {
       ipstr_t ip_buf;
 
-      traceEvent(TRACE_WARNING, "sendto() failed while attempting to send data to %s:%hd",
+      traceEvent(TRACE_WARNING, "sendto() failed while attempting to send data to %s:%d",
 		 intoa(ntohl(to->addr_type.v4_addr), ip_buf, sizeof(ip_buf)),
 		 ntohs(to->port));
     }

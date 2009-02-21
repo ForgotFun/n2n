@@ -141,7 +141,7 @@ static char ** buildargv(char * const linebuffer) {
   char ** argv;
   char *  buffer, * buff;
 
-  buffer = (char *)malloc(strlen(linebuffer)+2);
+  buffer = (char *)calloc(1, strlen(linebuffer)+2);
   if (!buffer) {
     traceEvent( TRACE_ERROR, "Unable to allocate memory");
     return NULL;
@@ -746,18 +746,18 @@ static void send_packet2net(n2n_edge_t * eee,
   /* Discard IP packets that are not originated by this hosts */
   if(!(eee->allow_routing)) {
     if(ntohs(eh->ether_type) == 0x0800) {
-
       /* This is an IP packet from the local source address - not forwarded. */
 #define ETH_FRAMESIZE 14
 #define IP4_SRCOFFSET 12
-#define IP4_ADDRSIZE  4
-      /* Note: all elements of the_ip are in network order */
-      if( 0 != memcmp( decrypted_msg + ETH_FRAMESIZE + IP4_SRCOFFSET,
-                       &(eee->device.ip_addr),
-                       IP4_ADDRSIZE ) ) {
-	/* This is a packet that needs to be routed */
-	traceEvent(TRACE_INFO, "Discarding routed packet");
-	return;
+	  char ip_buf[32];
+	  u_int32_t *dst = (u_int32_t*)&decrypted_msg[ETH_FRAMESIZE + IP4_SRCOFFSET];
+
+		/* Note: all elements of the_ip are in network order */
+      if( *dst != eee->device.ip_addr) {
+		/* This is a packet that needs to be routed */
+		traceEvent(TRACE_INFO, "Discarding routed packet [%s]", 
+				               intoa(ntohl(*dst), ip_buf, sizeof(ip_buf)));
+		return;
       } else {
 	/* This packet is originated by us */
 	/* traceEvent(TRACE_INFO, "Sending non-routed packet"); */
@@ -858,7 +858,9 @@ static int check_received_packet(n2n_edge_t * eee, char *pkt,
       struct ip *the_ip = (struct ip*)(pkt+sizeof(struct ether_header));
 
       if((the_ip->ip_dst.s_addr != eee->device.ip_addr)
-	 && ((the_ip->ip_dst.s_addr & eee->device.device_mask) != (eee->device.ip_addr & eee->device.device_mask))) /* Not a broadcast */
+	 && ((the_ip->ip_dst.s_addr & eee->device.device_mask) != (eee->device.ip_addr & eee->device.device_mask)) /* Not a broadcast */
+	 && ((the_ip->ip_dst.s_addr & 0xF0000000) != (0xF0000000 /* 224.0.0.0-239.255.255.255 */)) /* Not a multicast */
+	 )
 	{
           ipstr_t ip_buf;
           ipstr_t ip_buf2;
@@ -1201,7 +1203,7 @@ int main(int argc, char* argv[]) {
 
   effectiveargc =0;
   while (effectiveargv[effectiveargc]) ++effectiveargc;
-
+effectiveargv[effectiveargc] = 0;
   if (linebuffer) {
     free(linebuffer);
     linebuffer = NULL;
@@ -1213,6 +1215,7 @@ int main(int argc, char* argv[]) {
   while((opt = getopt_long(effectiveargc, effectiveargv, "k:a:bc:u:g:m:M:d:l:p:fvhrt", long_options, NULL)) != EOF) {
     switch (opt) {
     case 'a':
+		  printf("%s\n", optarg);
       ip_addr = strdup(optarg);
       break;
     case 'c': /* community */

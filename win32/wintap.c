@@ -2,6 +2,7 @@
   (C) 2007-08 - Luca Deri <deri@ntop.org>
 */
 
+#include "../n2n.h"
 #include "n2n_win32.h"
 
 /* 1500 bytes payload + 14 bytes ethernet header + 4 bytes VLAN tag */
@@ -21,8 +22,8 @@ void initWin32() {
 }
 
 int open_wintap(struct tuntap_dev *device,
-		char *device_ip, char *device_mask,
-		int mtu) {
+				char *device_ip, char *device_mask,
+				char *device_mac, int mtu) {
   HKEY key, key2;
   LONG rc;
   char regpath[1024], cmd[256];
@@ -33,7 +34,6 @@ int open_wintap(struct tuntap_dev *device,
   int found = 0;
   int err, i;
   ULONG status = TRUE;
-  ULONG _mtu;
 
   memset(device, 0, sizeof(struct tuntap_dev));
   device->device_handle = INVALID_HANDLE_VALUE;
@@ -112,7 +112,8 @@ int open_wintap(struct tuntap_dev *device,
 
   if(device->device_handle == INVALID_HANDLE_VALUE) {
     _snprintf(tapname, sizeof(tapname), USERMODEDEVICEDIR "%s" TAPSUFFIX, device->device_name);
-    device->device_handle = CreateFile(tapname, GENERIC_WRITE | GENERIC_READ, 0, 0, OPEN_EXISTING, FILE_ATTRIBUTE_SYSTEM | FILE_FLAG_OVERLAPPED, 0);
+    device->device_handle = CreateFile(tapname, GENERIC_WRITE | GENERIC_READ, 0, 0, 
+									   OPEN_EXISTING, FILE_ATTRIBUTE_SYSTEM | FILE_FLAG_OVERLAPPED, 0);
   }
 
   if(device->device_handle == INVALID_HANDLE_VALUE) {
@@ -120,28 +121,20 @@ int open_wintap(struct tuntap_dev *device,
     exit(-1);
   }
 
-  /* Get MAC address from tap device->device_name */
+    /* Get MAC address from tap device->device_name */
 
   if(!DeviceIoControl(device->device_handle, TAP_IOCTL_GET_MAC,
-		      device->mac_addr, sizeof(device->mac_addr),
-		      device->mac_addr, sizeof(device->mac_addr), &len, 0)) {
+                      device->mac_addr, sizeof(device->mac_addr),
+                      device->mac_addr, sizeof(device->mac_addr), &len, 0)) {
     printf("Could not get MAC address from Windows tap %s (%s)\n",
-	   device->device_name, device->ifName);
+           device->device_name, device->ifName);
     return -1;
   }
 
-  _mtu = mtu;
-  if (DeviceIoControl (device->device_handle, TAP_IOCTL_SET_MTU,
-		       &_mtu, sizeof(_mtu),
-		       &_mtu, sizeof(_mtu), &len, NULL)) {
-    device->mtu = (int)mtu;
-  } else {
-    printf("Could not set MTU (%d) to Windows tap device %s\n", mtu, device->ifName);
-    return -1;
-  }
+   device->mtu = mtu;
 
-  printf("Open device [name=%s][ifName=%s][MTU=%d][mac=%02X:%02X:%02X:%02X:%02X:%02X]\n",
-	 device->device_name, device->ifName, device->mtu,
+   printf("Open device [name=%s][ip=%s][ifName=%s][MTU=%d][mac=%02X:%02X:%02X:%02X:%02X:%02X]\n",
+	 device->device_name, device_ip, device->ifName, device->mtu,
 	 device->mac_addr[0] & 0xFF,
 	 device->mac_addr[1] & 0xFF,
 	 device->mac_addr[2] & 0xFF,
@@ -156,21 +149,26 @@ int open_wintap(struct tuntap_dev *device,
   _snprintf(cmd, sizeof(cmd),
 	    "netsh interface ip set address \"%s\" static %s %s",
 	    device->ifName, device_ip, device_mask);
+
   if(system(cmd) == 0) {
     device->ip_addr = inet_addr(device_ip);
     device->device_mask = inet_addr(device_mask);
     printf("Device %s set to %s/%s\n",
 	   device->ifName, device_ip, device_mask);
   } else
-    printf("WARNING: Unable to set device %s IP address\n", device->ifName);
+    printf("WARNING: Unable to set device %s IP address [%s]\n",
+			device->ifName, cmd);
+
+  /* ****************** */
+
+  if(device->mtu != DEFAULT_MTU)
+	printf("WARNING: MTU set is not supported on Windows\n");
 
   /* set driver media status to 'connected' (i.e. set the interface up) */
   if (!DeviceIoControl (device->device_handle, TAP_IOCTL_SET_MEDIA_STATUS,
 			&status, sizeof (status),
 			&status, sizeof (status), &len, NULL))
     printf("WARNING: Unable to enable TAP adapter\n");
-
-  /* ****************** */
 
   /*
    * Initialize overlapped structures
@@ -241,9 +239,9 @@ int tuntap_write(struct tuntap_dev *tuntap, unsigned char *buf, int len)
 
 /* ************************************************ */
 
-int tuntap_open(tuntap_dev *device,
-		char *dev, char *device_ip, char *device_mask) {
-  return(open_wintap(device, device_ip, device_mask));
+int  tuntap_open(tuntap_dev *device, char *dev, char *device_ip, 
+				 char *device_mask, const char * device_mac, int mtu) {
+  return(open_wintap(device, device_ip, device_mask, device_mac, mtu));
 }
 
 /* ************************************************ */

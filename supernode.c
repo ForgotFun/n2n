@@ -116,7 +116,7 @@ static void register_peer(struct n2n_packet_header *hdr,
   scan->sinfo           = *sinfo;
   known_peers           = scan;
 
-  traceEvent(TRACE_NORMAL, "Registered new node [public_ip=(%d)%s:%hd][private_ip=%s:%hd][mac=%s][community=%s]",
+  traceEvent(TRACE_NORMAL, "Registered new node [public_ip=(%d)%s:%d][private_ip=%s:%d][mac=%s][community=%s]",
              scan->public_ip.family,
 	     intoa(ntohl(scan->public_ip.addr_type.v4_addr), buf, sizeof(buf)),
 	     ntohs(scan->public_ip.port),
