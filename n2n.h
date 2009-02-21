@@ -130,6 +130,8 @@ typedef struct tuntap_dev {
  * same value if they are to understand each other. */
 #define N2N_COMPRESSION_ENABLED 1
 
+#define DEFAULT_MTU   1400
+
 /* Maximum enum value is 255 due to marshalling into 1 byte */
 enum packet_type {
   packet_unreliable_data = 0,  /* no ACK needed */
@@ -240,7 +242,8 @@ extern void send_ack(n2n_sock_info_t * sinfo,
 		     char *src_mac);
 
 extern void traceEvent(int eventTraceLevel, char* file, int line, char * format, ...);
-extern int  tuntap_open(tuntap_dev *device, char *dev, char *device_ip, char *device_mask, const char * device_mac );
+extern int  tuntap_open(tuntap_dev *device, char *dev, char *device_ip, 
+			char *device_mask, const char * device_mac, int mtu);
 extern int  tuntap_read(struct tuntap_dev *tuntap, unsigned char *buf, int len);
 extern int  tuntap_write(struct tuntap_dev *tuntap, unsigned char *buf, int len);
 extern void tuntap_close(struct tuntap_dev *tuntap);

@@ -255,7 +255,7 @@ static void help() {
 	 "[-m <MAC address>]"
 	 "\n"
 	 "-l <supernode host:port> "
-	 "[-p <local port>] "
+	 "[-p <local port>] [-M <mtu>] "
 	 "[-t] [-r] [-v] [-b] [-h]\n\n");
 
 #ifdef __linux__
@@ -276,6 +276,7 @@ static void help() {
 #endif
   printf("-m <MAC address>         | Choose a MAC address for the TAP interface\n"
          "                         | eg. -m 01:02:03:04:05:06\n");
+  printf("-M <mtu>                 | Specify n2n MTU (default %d)\n", DEFAULT_MTU);
   printf("-t                       | Use http tunneling (experimental)\n");
   printf("-r                       | Enable packet forwarding through n2n community\n");
   printf("-v                       | Verbose\n");
@@ -287,7 +288,6 @@ static void help() {
 }
 
 /* *********************************************** */
-
 
 static void send_register( n2n_edge_t * eee,
 			   const struct peer_addr *remote_peer,
@@ -1133,6 +1133,7 @@ int main(int argc, char* argv[]) {
   int opt, local_port = 0 /* any port */;
   char *tuntap_dev_name = "edge0";
   char *ip_addr = NULL;
+  int mtu = DEFAULT_MTU;
 
 #ifndef WIN32
   uid_t userid=0; /* root is the only guaranteed ID */
@@ -1209,7 +1210,7 @@ int main(int argc, char* argv[]) {
   /* {int k;for(k=0;k<effectiveargc;++k)  printf("%s\n",effectiveargv[k]);} */
 
   optarg = NULL;
-  while((opt = getopt_long(effectiveargc, effectiveargv, "k:a:bc:u:g:m:d:l:p:fvhrt", long_options, NULL)) != EOF) {
+  while((opt = getopt_long(effectiveargc, effectiveargv, "k:a:bc:u:g:m:M:d:l:p:fvhrt", long_options, NULL)) != EOF) {
     switch (opt) {
     case 'a':
       ip_addr = strdup(optarg);
@@ -1223,23 +1224,28 @@ int main(int argc, char* argv[]) {
 
     case 'u': /* uid */
       {
-        userid=atoi(optarg);
+        userid = atoi(optarg);
         break;
       }
     case 'g': /* uid */
       {
-        groupid=atoi(optarg);
+        groupid = atoi(optarg);
         break;
       }
     case 'f' : /* fork as daemon */
       {
-        fork_as_daemon=1;
+        fork_as_daemon = 1;
         break;
       }
 #endif
     case 'm' : /* device_mac */
       {
-        device_mac=strdup(optarg);
+        device_mac = strdup(optarg);
+        break;
+      }
+    case 'M' : /* device_mac */
+      {
+        mtu = atoi(optarg);
         break;
       }
     case 'k': /* encrypt key */
@@ -1291,7 +1297,7 @@ int main(int argc, char* argv[]) {
   /* setgid( 0 ); */
 #endif
 
-  if(tuntap_open(&(eee.device), tuntap_dev_name, ip_addr, "255.255.255.0", device_mac ) < 0)
+  if(tuntap_open(&(eee.device), tuntap_dev_name, ip_addr, "255.255.255.0", device_mac, mtu) < 0)
     return(-1);
 
 #ifndef WIN32

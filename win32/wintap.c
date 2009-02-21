@@ -7,8 +7,6 @@
 /* 1500 bytes payload + 14 bytes ethernet header + 4 bytes VLAN tag */
 #define MTU 1518
 
-
-
 void initWin32() {
   WSADATA wsaData;
   int err;
@@ -23,7 +21,8 @@ void initWin32() {
 }
 
 int open_wintap(struct tuntap_dev *device,
-		char *device_ip, char *device_mask) {
+		char *device_ip, char *device_mask,
+		int mtu) {
   HKEY key, key2;
   LONG rc;
   char regpath[1024], cmd[256];
@@ -34,7 +33,7 @@ int open_wintap(struct tuntap_dev *device,
   int found = 0;
   int err, i;
   ULONG status = TRUE;
-  ULONG mtu;
+  ULONG _mtu;
 
   memset(device, 0, sizeof(struct tuntap_dev));
   device->device_handle = INVALID_HANDLE_VALUE;
@@ -126,15 +125,20 @@ int open_wintap(struct tuntap_dev *device,
   if(!DeviceIoControl(device->device_handle, TAP_IOCTL_GET_MAC,
 		      device->mac_addr, sizeof(device->mac_addr),
 		      device->mac_addr, sizeof(device->mac_addr), &len, 0)) {
-    printf("Could not get MAC address from Windows tap device->device_name %s (%s)",
+    printf("Could not get MAC address from Windows tap %s (%s)\n",
 	   device->device_name, device->ifName);
     return -1;
   }
 
-  if (DeviceIoControl (device->device_handle, TAP_IOCTL_GET_MTU,
-		       &mtu, sizeof (mtu),
-		       &mtu, sizeof (mtu), &len, NULL))
-    device->mtu = (int) mtu;
+  _mtu = mtu;
+  if (DeviceIoControl (device->device_handle, TAP_IOCTL_SET_MTU,
+		       &_mtu, sizeof(_mtu),
+		       &_mtu, sizeof(_mtu), &len, NULL)) {
+    device->mtu = (int)mtu;
+  } else {
+    printf("Could not set MTU (%d) to Windows tap device %s\n", mtu, device->ifName);
+    return -1;
+  }
 
   printf("Open device [name=%s][ifName=%s][MTU=%d][mac=%02X:%02X:%02X:%02X:%02X:%02X]\n",
 	 device->device_name, device->ifName, device->mtu,
@@ -254,10 +258,11 @@ void tuntap_close(struct tuntap_dev *tuntap) {
 int main(int argc, char* argv[]) {
   struct tuntap_dev tuntap;
   int i;
+  int mtu = 1400;
 
   printf("Welcome to n2n\n");
   initWin32();
-  open_wintap(&tuntap, "1.2.3.20", "255.255.255.0");
+  open_wintap(&tuntap, "1.2.3.20", "255.255.255.0", mtu);
 
   for(i=0; i<10; i++) {
     u_char buf[MTU];

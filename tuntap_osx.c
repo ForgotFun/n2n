@@ -28,7 +28,8 @@ int tuntap_open(tuntap_dev *device /* ignored */,
                 char *dev, 
                 char *device_ip, 
                 char *device_mask,
-                const char * device_mac ) {
+                const char * device_mac,
+		int mtu) {
   int i;
   char tap_device[N2N_OSX_TAPDEVICE_SIZE];
 
@@ -61,8 +62,8 @@ int tuntap_open(tuntap_dev *device /* ignored */,
         system(buf);
     }
 
-    snprintf(buf, sizeof(buf), "ifconfig tap%d %s netmask %s mtu 1400 up",
-             i, device_ip, device_mask);
+    snprintf(buf, sizeof(buf), "ifconfig tap%d %s netmask %s mtu %d up",
+             i, device_ip, device_mask, mtu);
     system(buf);
 
     traceEvent(TRACE_NORMAL, "Interface tap%d up and running (%s/%s)",
@@ -89,7 +90,7 @@ int tuntap_open(tuntap_dev *device /* ignored */,
 	exit(0);
       }
 
-      traceEvent(TRACE_NORMAL, "Interface tap%d mac %s", i, buf);
+      traceEvent(TRACE_NORMAL, "Interface tap%d [MTU %d] mac %s", i, mtu, buf);
       if(sscanf(buf, "%02x:%02x:%02x:%02x:%02x:%02x", &a, &b, &c, &d, &e, &f) == 6) {
 	device->mac_addr[0] = a, device->mac_addr[1] = b;
 	device->mac_addr[2] = c, device->mac_addr[3] = d;

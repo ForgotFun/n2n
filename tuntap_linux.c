@@ -42,6 +42,7 @@ static void read_mac(char *ifname, char *mac_addr) {
 }
 
 /* ********************************** */
+
 /** @brief  Open and configure the TAP device for packet read/write.
  *
  *  This routine creates the interface via the tuntap driver then uses ifconfig
@@ -52,6 +53,7 @@ static void read_mac(char *ifname, char *mac_addr) {
  *                       if NULL system will assign a name
  *  @param device_ip   - address of iface
  *  @param device_mask - netmask for device_ip
+ *  @param mtu         - MTU for device_ip
  *
  *  @return - negative value on error
  *          - non-negative file-descriptor on success
@@ -60,7 +62,8 @@ int tuntap_open(tuntap_dev *device,
                 char *dev, /* user-definable interface name, eg. edge0 */
                 char *device_ip, 
                 char *device_mask,
-                const char * device_mac ) {
+                const char * device_mac.
+		int mtu) {
   char *tuntap_device = "/dev/net/tun";
 #define N2N_LINUX_SYSTEMCMD_SIZE 128
   char buf[N2N_LINUX_SYSTEMCMD_SIZE];
@@ -97,8 +100,8 @@ int tuntap_open(tuntap_dev *device,
       traceEvent(TRACE_INFO, "Setting MAC: %s", buf);
   }
 
-  snprintf(buf, sizeof(buf), "/sbin/ifconfig %s %s netmask %s mtu 1400 up",
-           ifr.ifr_name, device_ip, device_mask);
+  snprintf(buf, sizeof(buf), "/sbin/ifconfig %s %s netmask %s mtu %d up",
+           ifr.ifr_name, device_ip, device_mask, mtu);
   system(buf);
   traceEvent(TRACE_INFO, "Bringing up: %s", buf);
 
