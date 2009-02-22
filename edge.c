@@ -749,10 +749,9 @@ static void send_packet2net(n2n_edge_t * eee,
       /* This is an IP packet from the local source address - not forwarded. */
 #define ETH_FRAMESIZE 14
 #define IP4_SRCOFFSET 12
-	  char ip_buf[32];
-	  u_int32_t *dst = (u_int32_t*)&decrypted_msg[ETH_FRAMESIZE + IP4_SRCOFFSET];
+      u_int32_t *dst = (u_int32_t*)&decrypted_msg[ETH_FRAMESIZE + IP4_SRCOFFSET];
 
-		/* Note: all elements of the_ip are in network order */
+      /* Note: all elements of the_ip are in network order */
       if( *dst != eee->device.ip_addr) {
 		/* This is a packet that needs to be routed */
 		traceEvent(TRACE_INFO, "Discarding routed packet [%s]", 

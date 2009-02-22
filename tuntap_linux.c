@@ -62,7 +62,7 @@ int tuntap_open(tuntap_dev *device,
                 char *dev, /* user-definable interface name, eg. edge0 */
                 char *device_ip, 
                 char *device_mask,
-                const char * device_mac.
+                const char * device_mac,
 		int mtu) {
   char *tuntap_device = "/dev/net/tun";
 #define N2N_LINUX_SYSTEMCMD_SIZE 128

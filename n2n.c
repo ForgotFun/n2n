@@ -302,7 +302,6 @@ void traceEvent(int eventTraceLevel, char* file, int line, char * format, ...) {
     char theDate[N2N_TRACE_DATESIZE];
     char *extra_msg = "";
     time_t theTime = time(NULL);
-	int i;
 
     /* We have two paths - one if we're logging, one if we aren't
      *   Note that the no-log case is those systems which don't support it (WIN32),
