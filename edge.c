@@ -1001,7 +1001,7 @@ void readFromIPSocket( n2n_edge_t * eee )
 		  traceEvent(TRACE_INFO, "### Tx L2 Msg -> tun");
 		}
 	      } else {
-		traceEvent(TRACE_WARNING, "Bad destination: message discarded");
+			traceEvent(TRACE_WARNING, "Bad destination: message discarded");
 	      }
 	    }
 	    /* else silently ignore empty packet. */

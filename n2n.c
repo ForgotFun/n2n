@@ -600,7 +600,7 @@ static HEAP_ALLOC(wrkmem,LZO1X_1_MEM_COMPRESS);
 u_int send_data(n2n_sock_info_t * sinfo,
 		char *packet, size_t *packet_len,
 		const struct peer_addr *to, u_int8_t compress_data) {
-  char compressed[1600];
+  char compressed[1650];
   int rc;
   lzo_uint compressed_len;
   struct sockaddr_in destsock;
