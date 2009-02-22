@@ -858,7 +858,7 @@ static int check_received_packet(n2n_edge_t * eee, char *pkt,
 
       if((the_ip->ip_dst.s_addr != eee->device.ip_addr)
 	 && ((the_ip->ip_dst.s_addr & eee->device.device_mask) != (eee->device.ip_addr & eee->device.device_mask)) /* Not a broadcast */
-	 && ((the_ip->ip_dst.s_addr & 0xF0000000) != (0xF0000000 /* 224.0.0.0-239.255.255.255 */)) /* Not a multicast */
+	 && ((the_ip->ip_dst.s_addr & 0xE0000000) != (0xE0000000 /* 224.0.0.0-239.255.255.255 */)) /* Not a multicast */
 	 )
 	{
           ipstr_t ip_buf;
