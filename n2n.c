@@ -495,7 +495,14 @@ u_int receive_data(n2n_sock_info_t * sinfo,
                                  (u_char*)decompressed, &decompressed_len, NULL);
 
       if(rc == LZO_E_OK)
+      {
 	traceEvent(TRACE_INFO, "%u bytes decompressed into %u", insize, decompressed_len);
+      }
+      else
+      {
+        traceEvent(TRACE_WARNING, "Failed to decompress %u byte packet. LZO error=%d", insize, rc );
+        return -1;
+      }
 
       if(packet_len > decompressed_len) {
 	memcpy(&packet[N2N_PKT_HDR_SIZE], decompressed, decompressed_len);
