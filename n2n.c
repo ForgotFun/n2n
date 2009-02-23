@@ -609,7 +609,7 @@ u_int send_data(n2n_sock_info_t * sinfo,
 		const struct peer_addr *to, u_int8_t compress_data) {
   char compressed[1650];
   int rc;
-  lzo_uint compressed_len;
+  lzo_uint compressed_len=0;
   struct sockaddr_in destsock;
 
   if(*packet_len < N2N_PKT_HDR_SIZE) {
@@ -626,6 +626,13 @@ u_int send_data(n2n_sock_info_t * sinfo,
 			  *packet_len - N2N_PKT_HDR_SIZE,
 			  (u_char*)&compressed[N2N_PKT_HDR_SIZE],
 			  &compressed_len, wrkmem);
+
+    if ( 0 == compressed_len )
+    {
+      traceEvent(TRACE_WARNING, "failed to compress %u bytes.", (*packet_len - N2N_PKT_HDR_SIZE) );
+      return -1;
+    }
+
     compressed_len += N2N_PKT_HDR_SIZE;
 
     traceEvent(TRACE_INFO, "%u bytes compressed into %u", *packet_len, compressed_len);
