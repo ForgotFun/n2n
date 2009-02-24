@@ -87,10 +87,6 @@ int tuntap_open(tuntap_dev *device,
     return -1;
   }
 
-  /* REVISIT: BbMja7: MTU should be related to MTU of the interface the tuntap
-   * is built on.  The value 1400 assumes an eth iface with MTU 1500, but would
-   * fail for ppp at mtu=576.
-   */
   if ( device_mac )
   {
       /* Set the hw address before bringing the if up. */
@@ -106,6 +102,7 @@ int tuntap_open(tuntap_dev *device,
   traceEvent(TRACE_INFO, "Bringing up: %s", buf);
 
   device->ip_addr = inet_addr(device_ip);
+  device->device_mask = inet_addr(device_mask);
   read_mac(dev, (char*)device->mac_addr);
   return(device->fd);
 }
