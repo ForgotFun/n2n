@@ -17,6 +17,7 @@
  *
  * Code contributions courtesy of:
  * Don Bindner <don.bindner@gmail.com>
+ * Sylwester Sosnowski <syso-n2n@no-route.org>
  *
  */
 
@@ -248,6 +249,7 @@ static void help() {
 	 "-a <tun IP address> "
 	 "-c <community> "
 	 "-k <encrypt key> "
+	 "-s <netmask> "
 #ifndef WIN32
 	 "[-u <uid> -g <gid>]"
 	 "[-f]"
@@ -265,6 +267,7 @@ static void help() {
   printf("-a <tun IP address>      | n2n IP address\n");
   printf("-c <community>           | n2n community name\n");
   printf("-k <encrypt key>         | Encryption key (ASCII) - also N2N_KEY=<encrypt key>\n");
+  printf("-s <netmask>             | Edge interface netmask in dotted decimal notation (255.255.255.0)\n");
   printf("-l <supernode host:port> | Supernode IP:port\n");
   printf("-b                       | Periodically resolve supernode IP\n");
   printf("                         | (when supernodes are running on dynamic IPs)\n");
@@ -1130,11 +1133,16 @@ static void supernode2addr(n2n_edge_t * eee, char* addr) {
 
 extern int useSyslog;
 
+#define N2N_NETMASK_STR_SIZE 16 /* dotted decimal 12 numbers + 3 dots */
+
+
 int main(int argc, char* argv[]) {
   int opt, local_port = 0 /* any port */;
   char *tuntap_dev_name = "edge0";
   char *ip_addr = NULL;
-  int mtu = DEFAULT_MTU;
+  char  netmask[N2N_NETMASK_STR_SIZE]="255.255.255.0";
+  int   mtu = DEFAULT_MTU;
+  int   got_s = 0;
 
 #ifndef WIN32
   uid_t userid=0; /* root is the only guaranteed ID */
@@ -1211,7 +1219,7 @@ effectiveargv[effectiveargc] = 0;
   /* {int k;for(k=0;k<effectiveargc;++k)  printf("%s\n",effectiveargv[k]);} */
 
   optarg = NULL;
-  while((opt = getopt_long(effectiveargc, effectiveargv, "k:a:bc:u:g:m:M:d:l:p:fvhrt", long_options, NULL)) != EOF) {
+  while((opt = getopt_long(effectiveargc, effectiveargv, "k:a:bc:u:g:m:M:s:d:l:p:fvhrt", long_options, NULL)) != EOF) {
     switch (opt) {
     case 'a':
 		  printf("%s\n", optarg);
@@ -1274,6 +1282,13 @@ effectiveargv[effectiveargc] = 0;
     case 'p':
       local_port = atoi(optarg);
       break;
+    case 's': /* Subnet Mask */
+      if (0 != got_s) {
+          traceEvent(TRACE_WARNING, "Multiple subnet masks supplied.");
+      }
+      strncpy(netmask, optarg, N2N_NETMASK_STR_SIZE);
+      got_s = 1;
+      break;
     case 'h': /* help */
       help();
       break;
@@ -1299,7 +1314,7 @@ effectiveargv[effectiveargc] = 0;
   /* setgid( 0 ); */
 #endif
 
-  if(tuntap_open(&(eee.device), tuntap_dev_name, ip_addr, "255.255.255.0", device_mac, mtu) < 0)
+  if(tuntap_open(&(eee.device), tuntap_dev_name, ip_addr, netmask, device_mac, mtu) < 0)
     return(-1);
 
 #ifndef WIN32

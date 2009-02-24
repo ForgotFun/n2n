@@ -21,10 +21,17 @@ sets the n2n virtual LAN IP address being claimed. This is a private IP
 address. All IP addresses in an n2n community should belong to the same /24
 network (ie. only the last segment of the IP addresses varies).
 .TP
+\-b
+cause edge to perform hostname resolution for the supernode address each time
+the supernode is periodically contacted.
+.TP
 \-c <community>
 sets the n2n community name. All edges within the same community look to be on
 the same LAN (layer 2 network segment). All edges communicating must use the
 same key and community name.
+.TP
+\-h
+write usage to tty then exit.
 .TP
 \-k <keystring>
 sets the twofish encryption key from ASCII text (see also N2N_KEY in
@@ -54,6 +61,14 @@ start the TAP interface with the given MAC address. This is highly recommended
 as it means the same address will be used if edge stops and restarts. If this is
 not done, the ARP caches of all peers will be wrong and packets will not flow to
 this edge until the next ARP refresh.
+.TP
+\-M <MTU>
+set the MTU of the edge interface in bytes. MTU is the largest packet fragment
+size allowed to be moved throught the interface. The default is 1400.
+.TP
+\-s <netmask> 
+set the netmask of edge interface in IPv4 dotted decimal notation. The default
+is 255.255.255.0 (ie. /24).
 .TP
 \-t
 use HTTP tunneling instead of the normal UDP mechanism (experimental).
