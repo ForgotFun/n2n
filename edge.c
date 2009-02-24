@@ -18,6 +18,7 @@
  * Code contributions courtesy of:
  * Don Bindner <don.bindner@gmail.com>
  * Sylwester Sosnowski <syso-n2n@no-route.org>
+ * Wilfried "Wonka" Klaebe
  *
  */
 
@@ -853,6 +854,8 @@ static int check_received_packet(n2n_edge_t * eee, char *pkt,
   } else if(pkt_len > 32 /* IP + Ethernet */) {
     /* Check if this packet is for us or if it's routed */
     struct ether_header *eh = (struct ether_header*)pkt;
+      
+    const struct in_addr bcast = { 0xffffffff };
 
     if(ntohs(eh->ether_type) == 0x0800) {
 
@@ -862,6 +865,7 @@ static int check_received_packet(n2n_edge_t * eee, char *pkt,
       if((the_ip->ip_dst.s_addr != eee->device.ip_addr)
 	 && ((the_ip->ip_dst.s_addr & eee->device.device_mask) != (eee->device.ip_addr & eee->device.device_mask)) /* Not a broadcast */
 	 && ((the_ip->ip_dst.s_addr & 0xE0000000) != (0xE0000000 /* 224.0.0.0-239.255.255.255 */)) /* Not a multicast */
+	 && ((the_ip->ip_dst.s_addr) != (bcast.s_addr)) /* always broadcast (RFC919) */
 	 )
 	{
           ipstr_t ip_buf;
