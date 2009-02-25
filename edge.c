@@ -51,7 +51,8 @@ struct n2n_edge
   int                 allow_routing /*= 0*/;
   int                 drop_ipv6_ndp /*= 0*/;
   char *              encrypt_key /* = NULL*/;
-  TWOFISH *           tf;
+  TWOFISH *           enc_tf;
+  TWOFISH *           dec_tf;
 
   struct peer_info *  known_peers /* = NULL*/;
   struct peer_info *  pending_peers /* = NULL*/;
@@ -201,7 +202,8 @@ static int edge_init(n2n_edge_t * eee) {
   eee->allow_routing = 0;
   eee->drop_ipv6_ndp = 0;
   eee->encrypt_key   = NULL;
-  eee->tf            = NULL;
+  eee->enc_tf        = NULL;
+  eee->dec_tf        = NULL;
   eee->known_peers   = NULL;
   eee->pending_peers = NULL;
   eee->last_register = 0;
@@ -216,9 +218,10 @@ static int edge_init(n2n_edge_t * eee) {
 
 static int edge_init_twofish( n2n_edge_t * eee, u_int8_t *encrypt_pwd, u_int32_t encrypt_pwd_len )
 {
-  eee->tf = TwoFishInit(encrypt_pwd, encrypt_pwd_len);
+  eee->enc_tf = TwoFishInit(encrypt_pwd, encrypt_pwd_len);
+  eee->dec_tf = TwoFishInit(encrypt_pwd, encrypt_pwd_len);
 
-  if ( eee->tf )
+  if ( (eee->enc_tf) && (eee->dec_tf) )
     {
       return 0;
     }
@@ -231,7 +234,8 @@ static int edge_init_twofish( n2n_edge_t * eee, u_int8_t *encrypt_pwd, u_int32_t
 /* ************************************** */
 
 static void edge_deinit(n2n_edge_t * eee) {
-  TwoFishDestroy(eee->tf);
+  TwoFishDestroy(eee->enc_tf);
+  TwoFishDestroy(eee->dec_tf);
   if ( eee->sinfo.sock >=0 )
     {
       close( eee->sinfo.sock );
@@ -770,7 +774,7 @@ static void send_packet2net(n2n_edge_t * eee,
 
   /* Encrypt "decrypted_msg" into the second half of the n2n packet. */
   len = TwoFishEncryptRaw((u_int8_t *)decrypted_msg,
-			  (u_int8_t *)&packet[N2N_PKT_HDR_SIZE], len, eee->tf);
+			  (u_int8_t *)&packet[N2N_PKT_HDR_SIZE], len, eee->enc_tf);
 
   /* Add the n2n header to the start of the n2n packet. */
   fill_standard_header_fields( &(eee->sinfo), &hdr, (char*)(eee->device.mac_addr) );
@@ -988,7 +992,7 @@ void readFromIPSocket( n2n_edge_t * eee )
 
 	    /* Decrypt message first */
 	    len = TwoFishDecryptRaw((u_int8_t *)&packet[N2N_PKT_HDR_SIZE],
-				    (u_int8_t *)decrypted_msg, len, eee->tf);
+				    (u_int8_t *)decrypted_msg, len, eee->dec_tf);
 
 	    if(len > 0) {
 	      if(check_received_packet(eee, decrypted_msg, len) == 0) {
