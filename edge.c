@@ -870,8 +870,11 @@ static int check_received_packet(n2n_edge_t * eee, char *pkt,
 	 && ((the_ip->ip_dst.s_addr & eee->device.device_mask) != (eee->device.ip_addr & eee->device.device_mask)) /* Not a broadcast */
 	 && ((the_ip->ip_dst.s_addr & 0xE0000000) != (0xE0000000 /* 224.0.0.0-239.255.255.255 */)) /* Not a multicast */
 	 && ((the_ip->ip_dst.s_addr) != (bcast.s_addr)) /* always broadcast (RFC919) */
+	 && (!(eee->allow_routing)) /* routing is enabled so let it in */
 	 )
-	{
+      {
+          /* Dropping the packet */
+
           ipstr_t ip_buf;
           ipstr_t ip_buf2;
 
@@ -879,7 +882,7 @@ static int check_received_packet(n2n_edge_t * eee, char *pkt,
 	  traceEvent(TRACE_INFO, "Discarding routed packet [rcvd=%s][expected=%s]",
 		     intoa(ntohl(the_ip->ip_dst.s_addr), ip_buf, sizeof(ip_buf)),
 		     intoa(ntohl(eee->device.ip_addr), ip_buf2, sizeof(ip_buf2)));
-	} else {
+      } else {
 	/* This packet is for us */
 
 	/* traceEvent(TRACE_INFO, "Received non-routed packet"); */
