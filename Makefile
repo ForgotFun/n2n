@@ -69,3 +69,8 @@ install: edge supernode edge.8.gz supernode.1.gz
 	$(INSTALL_PROG) edge $(SBINDIR)/
 	$(INSTALL_DOC) edge.8.gz $(MAN8DIR)/
 	$(INSTALL_DOC) supernode.1.gz $(MAN1DIR)/
+
+# Courtesy of Ole Tange <ole@tange.dk>
+
+deb:
+	dpkg-buildpackage
