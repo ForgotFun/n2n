@@ -209,7 +209,7 @@ int unmarshall_n2n_packet_header( struct n2n_packet_header * hdr, const u_int8_t
 
 /* ************************************** */
 
-SOCKET open_socket(int local_port, int udp_sock, int server_mode) {
+SOCKET open_socket(u_int16_t local_port, int udp_sock, int server_mode) {
   SOCKET sock_fd;
   struct sockaddr_in local_address;
   int sockopt = 1;
