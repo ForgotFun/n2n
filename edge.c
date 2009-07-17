@@ -1148,7 +1148,8 @@ extern int useSyslog;
 
 
 int main(int argc, char* argv[]) {
-  int opt, local_port = 0 /* any port */;
+  int opt=0;
+  u_int16_t local_port = 0 /* any port */;
   char *tuntap_dev_name = "edge0";
   char *ip_addr = NULL;
   char  netmask[N2N_NETMASK_STR_SIZE]="255.255.255.0";
@@ -1291,7 +1292,7 @@ effectiveargv[effectiveargc] = 0;
       eee.re_resolve_supernode_ip = 1;
       break;
     case 'p':
-      local_port = atoi(optarg);
+      local_port = atoi(optarg) & 0xffff;
       break;
     case 's': /* Subnet Mask */
       if (0 != got_s) {
@@ -1339,7 +1340,7 @@ effectiveargv[effectiveargc] = 0;
 #endif
 
   if(local_port > 0)
-    traceEvent(TRACE_NORMAL, "Binding to local port %d", local_port);
+    traceEvent(TRACE_NORMAL, "Binding to local port %hu", local_port);
 
   if(edge_init_twofish( &eee, (u_int8_t *)(encrypt_key), strlen(encrypt_key) ) < 0) return(-1);
   eee.sinfo.sock = open_socket(local_port, eee.sinfo.is_udp_socket, 0);

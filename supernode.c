@@ -439,7 +439,8 @@ static void startTcpReadThread(int sock_fd) {
 /* *********************************************** */
 
 int main(int argc, char* argv[]) {
-  int opt, local_port = 0;
+  int opt; 
+  u_int16_t local_port = 0;
   n2n_sock_info_t udp_sinfo;
   n2n_sock_info_t tcp_sinfo;
 
@@ -451,7 +452,7 @@ int main(int argc, char* argv[]) {
   while((opt = getopt_long(argc, argv, "l:vh", long_options, NULL)) != EOF) {
     switch (opt) {
     case 'l': /* local-port */
-      local_port = atoi(optarg);
+      local_port = atoi(optarg) & 0xffff;
       break;
     case 'h': /* help */
       help();
@@ -473,7 +474,7 @@ int main(int argc, char* argv[]) {
   tcp_sinfo.sock = open_socket(local_port, 0, 1);
   if(tcp_sinfo.sock < 0) return(-1);
 
-  traceEvent(TRACE_NORMAL, "Supernode ready: listening on port %d [TCP/UDP]", local_port);
+  traceEvent(TRACE_NORMAL, "Supernode ready: listening on port %hu [TCP/UDP]", local_port);
 
   while(1) {
     int rc, max_sock;
