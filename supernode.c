@@ -88,7 +88,7 @@ static void register_peer(struct n2n_packet_header *hdr,
         memcpy(&scan->private_ip, &hdr->private_ip, sizeof(struct peer_addr));
 
         /* Overwrite existing peer */
-        traceEvent(TRACE_NORMAL, "Re-registered node [public_ip=(%d)%s:%hd][private_ip=%s:%hd][mac=%s][community=%s]",
+        traceEvent(TRACE_NORMAL, "Re-registered node [public_ip=(%d)%s:%hu][private_ip=%s:%hu][mac=%s][community=%s]",
                    scan->public_ip.family,
                    intoa(ntohl(scan->public_ip.addr_type.v4_addr), buf, sizeof(buf)),
                    ntohs(scan->public_ip.port),
@@ -142,7 +142,7 @@ static void deregister_peer(struct n2n_packet_header *hdr,
       else
 	prev->next = scan->next;
 
-      traceEvent(TRACE_INFO, "Degistered node [public_ip=%s:%hd][private_ip=%s:%hd]",
+      traceEvent(TRACE_INFO, "Degistered node [public_ip=%s:%hu][private_ip=%s:%hu]",
 		 intoa(ntohl(scan->public_ip.addr_type.v4_addr), buf, sizeof(buf)),
 		 ntohs(scan->public_ip.port),
 		 intoa(ntohl(scan->private_ip.addr_type.v4_addr), buf1, sizeof(buf1)),
@@ -155,7 +155,7 @@ static void deregister_peer(struct n2n_packet_header *hdr,
     scan = scan->next;
   }
 
-  traceEvent(TRACE_WARNING, "Unable to delete specified peer [%s:%hd]",
+  traceEvent(TRACE_WARNING, "Unable to delete specified peer [%s:%hu]",
 	     intoa(ntohl(sender->addr_type.v4_addr), buf, sizeof(buf)),
 	     ntohs(sender->port));
 }
@@ -211,7 +211,7 @@ static size_t broadcast_packet(char *packet, u_int packet_len,
 
                 ++numsent;
                 ++(supernode_stats.pkts);
-                traceEvent(TRACE_INFO, "Sent multicast message to remote node [%s:%hd][mac=%s]",
+                traceEvent(TRACE_INFO, "Sent multicast message to remote node [%s:%hu][mac=%s]",
                            intoa(ntohl(scan->public_ip.addr_type.v4_addr), buf, sizeof(buf)),
                            ntohs(scan->public_ip.port),
                            macaddr_str(scan->mac_addr, buf1, sizeof(buf1)));
@@ -285,7 +285,7 @@ static size_t forward_packet(char *packet, u_int packet_len,
             }
             else {
                 ++(supernode_stats.pkts);
-                traceEvent(TRACE_INFO, "Sent message to remote node [%s:%hd][mac=%s]",
+                traceEvent(TRACE_INFO, "Sent message to remote node [%s:%hu][mac=%s]",
                            intoa(ntohl(scan->public_ip.addr_type.v4_addr), buf, sizeof(buf)),
                            ntohs(scan->public_ip.port),
                            macaddr_str(scan->mac_addr, buf1, sizeof(buf1)));
@@ -309,7 +309,7 @@ static void handle_packet(char *packet, u_int packet_len,
                           n2n_sock_info_t * sinfo) {
     ipstr_t buf;
 
-    traceEvent(TRACE_INFO, "Received message from node [%s:%hd]",
+    traceEvent(TRACE_INFO, "Received message from node [%s:%hu]",
                intoa(ntohl(sender->addr_type.v4_addr), buf, sizeof(buf)),
                ntohs(sender->port));
 
