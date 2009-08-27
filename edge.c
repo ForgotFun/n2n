@@ -757,13 +757,14 @@ static void send_packet2net(n2n_edge_t * eee,
       /* This is an IP packet from the local source address - not forwarded. */
 #define ETH_FRAMESIZE 14
 #define IP4_SRCOFFSET 12
-      u_int32_t *dst = (u_int32_t*)&decrypted_msg[ETH_FRAMESIZE + IP4_SRCOFFSET];
+      u_int32_t dst;
+      memcpy( &dst, &decrypted_msg[ETH_FRAMESIZE + IP4_SRCOFFSET], sizeof(dst) );
 
-      /* Note: all elements of the_ip are in network order */
-      if( *dst != eee->device.ip_addr) {
+      /* The following comparison works because device.ip_addr is stored in network order */
+      if( dst != eee->device.ip_addr) {
 		/* This is a packet that needs to be routed */
 		traceEvent(TRACE_INFO, "Discarding routed packet [%s]", 
-				               intoa(ntohl(*dst), ip_buf, sizeof(ip_buf)));
+				               intoa(ntohl(dst), ip_buf, sizeof(ip_buf)));
 		return;
       } else {
 	/* This packet is originated by us */
@@ -864,12 +865,13 @@ static int check_received_packet(n2n_edge_t * eee, char *pkt,
     if(ntohs(eh->ether_type) == 0x0800) {
 
       /* Note: all elements of the_ip are in network order */
-      struct ip *the_ip = (struct ip*)(pkt+sizeof(struct ether_header));
+      struct ip the_ip;
+      memcpy( &the_ip, pkt+sizeof(struct ether_header), sizeof(the_ip) );
 
-      if((the_ip->ip_dst.s_addr != eee->device.ip_addr)
-	 && ((the_ip->ip_dst.s_addr & eee->device.device_mask) != (eee->device.ip_addr & eee->device.device_mask)) /* Not a broadcast */
-	 && ((the_ip->ip_dst.s_addr & 0xE0000000) != (0xE0000000 /* 224.0.0.0-239.255.255.255 */)) /* Not a multicast */
-	 && ((the_ip->ip_dst.s_addr) != (bcast.s_addr)) /* always broadcast (RFC919) */
+      if((the_ip.ip_dst.s_addr != eee->device.ip_addr)
+	 && ((the_ip.ip_dst.s_addr & eee->device.device_mask) != (eee->device.ip_addr & eee->device.device_mask)) /* Not a broadcast */
+	 && ((the_ip.ip_dst.s_addr & 0xE0000000) != (0xE0000000 /* 224.0.0.0-239.255.255.255 */)) /* Not a multicast */
+	 && ((the_ip.ip_dst.s_addr) != (bcast.s_addr)) /* always broadcast (RFC919) */
 	 && (!(eee->allow_routing)) /* routing is enabled so let it in */
 	 )
       {
@@ -880,7 +882,7 @@ static int check_received_packet(n2n_edge_t * eee, char *pkt,
 
 	  /* This is a packet that needs to be routed */
 	  traceEvent(TRACE_INFO, "Discarding routed packet [rcvd=%s][expected=%s]",
-		     intoa(ntohl(the_ip->ip_dst.s_addr), ip_buf, sizeof(ip_buf)),
+		     intoa(ntohl(the_ip.ip_dst.s_addr), ip_buf, sizeof(ip_buf)),
 		     intoa(ntohl(eee->device.ip_addr), ip_buf2, sizeof(ip_buf2)));
       } else {
 	/* This packet is for us */
