@@ -180,7 +180,7 @@ struct n2n_sock_info
 typedef struct n2n_sock_info    n2n_sock_info_t;
 
 struct peer_info {
-  char community_name[16], mac_addr[6];
+  char community_name[COMMUNITY_LEN], mac_addr[6];
   struct peer_addr public_ip, private_ip;
   time_t last_seen;
   struct peer_info *next;
