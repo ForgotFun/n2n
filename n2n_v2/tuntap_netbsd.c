@@ -69,7 +69,7 @@ int tuntap_open(tuntap_dev *device /* ignored */,
 
     device->ip_addr = inet_addr(device_ip);
 
-    if ( device_mac )
+    if ( device_mac && device_mac[0] != '\0' )
     {
         /* Set the hw address before bringing the if up. */
         snprintf(buf, sizeof(buf), "ifconfig %s link %s active",

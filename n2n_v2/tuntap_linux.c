@@ -91,7 +91,7 @@ int tuntap_open(tuntap_dev *device,
   /* Store the device name for later reuse */
   strncpy(device->dev_name, ifr.ifr_name, MIN(IFNAMSIZ, N2N_IFNAMSIZ) );
 
-  if ( device_mac )
+  if ( device_mac && device_mac[0] != '\0' )
   {
       /* Set the hw address before bringing the if up. */
       snprintf(buf, sizeof(buf), "/sbin/ifconfig %s hw ether %s",
