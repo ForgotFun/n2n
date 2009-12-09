@@ -1,5 +1,5 @@
 
-N2N_VERSION="2.0.0"
+N2N_VERSION="2.1.0"
 
 ########
 
@@ -75,7 +75,7 @@ $(N2N_LIB): $(N2N_OBJS)
 version.c:
 	@echo "---- Version $(N2N_VERSION) ----"
 	@echo $(N2N_VERSION) | sed -e 's/.*/const char * n2n_sw_version   = "&";/' > version.c
-	@uname -p | sed -e 's/.*/const char * n2n_sw_osName    = "&";/' >> version.c
+	@uname | sed -e 's/.*/const char * n2n_sw_osName    = "&";/' >> version.c
 	@date +"%D %r" | sed -e 's/.*/const char * n2n_sw_buildDate = "&";/' >> version.c
 
 clean:
