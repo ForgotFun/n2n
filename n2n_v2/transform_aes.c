@@ -240,15 +240,22 @@ static int transop_decode_aes( n2n_trans_op_t * arg,
 
                     padding = assembly[ len-1 ]; /* last byte */
 
-                    traceEvent( TRACE_DEBUG, "padding = %u", padding );
-                    len -= padding;
+                    if ( padding < len )
+                    {
+                        traceEvent( TRACE_DEBUG, "padding = %u", padding );
+                        len -= padding;
 
-                    len -= TRANSOP_AES_NONCE_SIZE; /* size of ethernet packet */
+                        len -= TRANSOP_AES_NONCE_SIZE; /* size of ethernet packet */
 
-                    /* Step over 4-byte random nonce value */
-                    memcpy( outbuf, 
-                            assembly + TRANSOP_AES_NONCE_SIZE, 
-                            len );                
+                        /* Step over 4-byte random nonce value */
+                        memcpy( outbuf, 
+                                assembly + TRANSOP_AES_NONCE_SIZE, 
+                                len );
+                    }
+                    else
+                    {
+                        traceEvent( TRACE_WARNING, "UDP payload decryption failed." );
+                    }
                 }
                 else
                 {
