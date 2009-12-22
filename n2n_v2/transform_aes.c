@@ -1,4 +1,7 @@
 /* (c) 2009 Richard Andrews <andrews@ntop.org> */
+/* Contributions from:
+ *     - Jozef Kralik
+ */
 
 #include "n2n.h"
 #include "n2n_transforms.h"
@@ -238,10 +241,15 @@ static int transop_decode_aes( n2n_trans_op_t * arg,
                                      &(sa->dec_key),
                                      sa->dec_ivec, 0 /* decrypt */ );
 
-                    padding = assembly[ len-1 ]; /* last byte */
+                    /* last byte is how much was padding: max value should be
+                     * AES_BLOCKSIZE-1 */
+                    padding = assembly[ len-1 ] & 0xff; 
 
-                    if ( padding < len )
+                    if ( len >= (padding + TRANSOP_AES_NONCE_SIZE))
                     {
+                        /* strictly speaking for this to be an ethernet packet
+                         * it is going to need to be even bigger; but this is
+                         * enough to prevent segfaults. */
                         traceEvent( TRACE_DEBUG, "padding = %u", padding );
                         len -= padding;
 
