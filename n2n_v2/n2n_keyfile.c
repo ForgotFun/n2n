@@ -1,4 +1,7 @@
 /* (c) 2009 Richard Andrews <andrews@ntop.org> */
+/* Contributions from:
+ *     - Jozef Kralik
+ */
 
 #include "n2n.h"
 #include "n2n_keyfile.h"
