@@ -78,12 +78,12 @@ static int parseKeyLine( n2n_cipherspec_t * spec,
     /* decode valid_from time */
     token = strsep( &lp, DELIMITERS );
     if ( !token ) { goto error; }
-    spec->valid_from = atoi(token);
+    spec->valid_from = atol(token);
 
     /* decode valid_until time */
     token = strsep( &lp, DELIMITERS );
     if ( !token ) { goto error; }
-    spec->valid_until = atoi(token);
+    spec->valid_until = atol(token);
 
     /* decode the transform number */
     token = strsep( &lp, DELIMITERS );

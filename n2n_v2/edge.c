@@ -2242,9 +2242,8 @@ int main(int argc, char* argv[])
             return(-1);
         }
 
-    } else {
-        fprintf(stderr, "Error: no keys specified.\n" );
     }
+    /* else run in NULL mode */
 
 
     eee.udp_sock = open_socket(local_port, 1 /*bind ANY*/ );
