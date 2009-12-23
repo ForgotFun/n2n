@@ -13,31 +13,26 @@
 
 #include <winsock2.h>
 #include <windows.h>
+#include <winioctl.h>
 
 #include "wintap.h"
 
+#ifdef _MSC_VER
 #include "getopt.h"
 
-typedef unsigned long in_addr_t;
-typedef __int8 int8_t;
-typedef __int16 int16_t;
-typedef __int32 int32_t;
-typedef __int64 int64_t;
-typedef unsigned __int8 uint8_t;
-typedef unsigned __int16 uint16_t;
-typedef unsigned __int32 uint32_t;
-typedef unsigned __int64 uint64_t;
+/* Other Win environments are expected to support stdint.h */
+typedef unsigned int u_int32_t;
+typedef unsigned short u_int16_t;
+typedef unsigned char u_int8_t;
 typedef int ssize_t;
+#endif /* #ifdef _MSC_VER */
+
+typedef unsigned long in_addr_t;
+
 
 #define EAFNOSUPPORT   WSAEAFNOSUPPORT 
 #define MAX(a,b) (a > b ? a : b)
 #define MIN(a,b) (a < b ? a : b)
-typedef unsigned int u_int32_t;
-typedef unsigned short u_int16_t;
-typedef unsigned char u_int8_t;
-typedef int int32_t;
-typedef short int16_t;
-typedef char int8_t;
 
 #define snprintf _snprintf
 #define strdup _strdup

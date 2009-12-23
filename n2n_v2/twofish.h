@@ -49,14 +49,16 @@
 #include "win32/n2n_win32.h"
 #endif
 
-/* Not shipped with Visual Studio (as stated by the stdint.h wikipedia page) */
 #ifndef _MSC_VER
+/* Not shipped with Visual Studio (as stated by the stdint.h wikipedia page) */
 #include <stdint.h> /* defines uintN_t types */
 #endif
-/* The following are redefinitions if sys/types.h has been included too. That's
- * OK.*/
+
+#ifdef __sun__ /* Should be HAVE_SYS_TYPES */
+/* The following are redefinitions if sys/types.h has been included too.*/
 typedef uint32_t u_int32_t;
 typedef uint8_t  u_int8_t;
+#endif /* #ifdef __sun__ */
 
 /* Constants */
 

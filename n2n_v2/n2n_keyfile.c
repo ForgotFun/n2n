@@ -14,7 +14,7 @@
 #ifdef WIN32
 char *strsep( char **ppsz_string, const char *psz_delimiters )
 {
-	char *p;
+    char *p;
     char *psz_string = *ppsz_string;
     if( !psz_string )
         return NULL;

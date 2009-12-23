@@ -9,13 +9,19 @@
 #define N2N_WIRE_H_
 
 #include <stdlib.h>
-#ifndef WIN32
+
+#if defined(WIN32)
+#include "win32/n2n_win32.h"
+
+#if defined(__MINGW32__)
+#include <stdint.h>
+#endif /* #ifdef __MINGW32__ */
+
+#else /* #if defined(WIN32) */
 #include <stdint.h>
 #include <netinet/in.h>
 #include <sys/socket.h> /* AF_INET and AF_INET6 */
-#else
-#include "win32/n2n_win32.h"
-#endif
+#endif /* #if defined(WIN32) */
 
 #define N2N_PKT_VERSION                 2
 #define N2N_DEFAULT_TTL                 2       /* can be forwarded twice at most */

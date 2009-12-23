@@ -468,17 +468,20 @@ static void help() {
   print_n2n_version();
 
   printf("edge "
-#ifdef __linux__
+#if defined(N2N_CAN_RENAME_IFACE)
 	 "-d <tun device> "
-#endif
+#endif /* #if defined(N2N_CAN_RENAME_IFACE) */
 	 "-a [static:|dhcp:]<tun IP address> "
 	 "-c <community> "
 	 "[-k <encrypt key> | -K <key file>] "
 	 "-s <netmask> "
-#ifndef WIN32
+#if defined(N2N_HAVE_SETUID)
 	 "[-u <uid> -g <gid>]"
+#endif /* #ifndef N2N_HAVE_SETUID */
+
+#if defined(N2N_HAVE_DAEMON)
 	 "[-f]"
-#endif
+#endif /* #if defined(N2N_HAVE_DAEMON) */
 	 "[-m <MAC address>]"
 	 "\n"
 	 "-l <supernode host:port> "

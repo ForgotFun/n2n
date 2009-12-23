@@ -49,8 +49,6 @@
 #ifdef WIN32
 #include "win32/n2n_win32.h"
 #undef N2N_HAVE_DAEMON
-#else
-#include <getopt.h>
 #endif
 
 #include <time.h>
@@ -60,6 +58,10 @@
 #ifndef WIN32
 #include <netdb.h>
 #endif
+
+#ifndef _MSC_VER
+#include <getopt.h>
+#endif /* #ifndef _MSC_VER */
 
 #include <stdio.h>
 #include <errno.h>
@@ -73,7 +75,6 @@
 #include <pthread.h>
 
 #ifdef __linux__
-#define N2N_CAN_NAME_IFACE 1
 #include <linux/if.h>
 #include <linux/if_tun.h>
 #endif /* #ifdef __linux__ */
@@ -84,10 +85,6 @@
 
 #include <syslog.h>
 #include <sys/wait.h>
-
-#ifdef __sun__ /* Added for OpenSolaris rather than SPARC */
-#undef N2N_HAVE_DAEMON 
-#endif /* #ifdef __sun__ */
 
 #define ETH_ADDR_LEN 6
 struct ether_hdr
