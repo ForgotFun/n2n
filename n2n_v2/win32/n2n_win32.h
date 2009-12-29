@@ -21,9 +21,17 @@
 #include "getopt.h"
 
 /* Other Win environments are expected to support stdint.h */
+
+/* stdint.h typedefs (C99) (not present in Visual Studio) */
+typedef unsigned int uint32_t;
+typedef unsigned short uint16_t;
+typedef unsigned char uint8_t;
+
+/* sys/types.h typedefs (not present in Visual Studio) */
 typedef unsigned int u_int32_t;
 typedef unsigned short u_int16_t;
 typedef unsigned char u_int8_t;
+
 typedef int ssize_t;
 #endif /* #ifdef _MSC_VER */
 

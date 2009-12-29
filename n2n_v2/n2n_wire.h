@@ -14,6 +14,7 @@
 #include "win32/n2n_win32.h"
 
 #if defined(__MINGW32__)
+#define _WIN32_WINNT 0x501 //Otherwise the linker doesnt find getaddrinfo
 #include <stdint.h>
 #endif /* #ifdef __MINGW32__ */
 

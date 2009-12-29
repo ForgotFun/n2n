@@ -98,6 +98,7 @@ typedef struct ether_hdr ether_hdr_t;
 
 #ifdef __sun__
 #include <sys/sysmacros.h> /* MIN() and MAX() declared here */
+#undef N2N_HAVE_DAEMON
 #endif /* #ifdef __sun__ */
 
 #include <netinet/in.h>

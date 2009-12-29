@@ -140,7 +140,7 @@ void traceEvent(int eventTraceLevel, char* file, int line, char * format, ...) {
 /* addr should be in network order. Things are so much simpler that way. */
 char* intoa(uint32_t /* host order */ addr, char* buf, uint16_t buf_len) {
   char *cp, *retStr;
-  uint8_t byte;
+  uint8_t byteval;
   int n;
 
   cp = &buf[buf_len];
@@ -148,14 +148,14 @@ char* intoa(uint32_t /* host order */ addr, char* buf, uint16_t buf_len) {
 
   n = 4;
   do {
-    byte = addr & 0xff;
-    *--cp = byte % 10 + '0';
-    byte /= 10;
-    if (byte > 0) {
-      *--cp = byte % 10 + '0';
-      byte /= 10;
-      if (byte > 0)
-        *--cp = byte + '0';
+    byteval = addr & 0xff;
+    *--cp = byteval % 10 + '0';
+    byteval /= 10;
+    if (byteval > 0) {
+      *--cp = byteval % 10 + '0';
+      byteval /= 10;
+      if (byteval > 0)
+        *--cp = byteval + '0';
     }
     *--cp = '.';
     addr >>= 8;
