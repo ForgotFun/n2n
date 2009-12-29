@@ -56,8 +56,8 @@
 
 #ifdef __sun__ /* Should be HAVE_SYS_TYPES */
 /* The following are redefinitions if sys/types.h has been included too.*/
-typedef uint32_t u_int32_t;
-typedef uint8_t  u_int8_t;
+typedef uint32_t uint32_t;
+typedef uint8_t  uint8_t;
 #endif /* #ifdef __sun__ */
 
 /* Constants */
@@ -110,17 +110,17 @@ enum
 
 typedef struct    
 {
-    u_int32_t sBox[4 * 256];                    /* Key dependent S-box */
-    u_int32_t subKeys[TwoFish_TOTAL_SUBKEYS];   /* Subkeys  */
-    u_int8_t key[TwoFish_KEY_LENGTH];           /* Encryption Key */
-    u_int8_t *output;                           /* Pointer to output buffer */
-    u_int8_t qBlockPlain[TwoFish_BLOCK_SIZE];   /* Used by CBC */
-    u_int8_t qBlockCrypt[TwoFish_BLOCK_SIZE];
-    u_int8_t prevCipher[TwoFish_BLOCK_SIZE];
+    uint32_t sBox[4 * 256];                    /* Key dependent S-box */
+    uint32_t subKeys[TwoFish_TOTAL_SUBKEYS];   /* Subkeys  */
+    uint8_t key[TwoFish_KEY_LENGTH];           /* Encryption Key */
+    uint8_t *output;                           /* Pointer to output buffer */
+    uint8_t qBlockPlain[TwoFish_BLOCK_SIZE];   /* Used by CBC */
+    uint8_t qBlockCrypt[TwoFish_BLOCK_SIZE];
+    uint8_t prevCipher[TwoFish_BLOCK_SIZE];
     struct                                      /* Header for crypt functions. Has to be at least one block long. */
-    {   u_int32_t salt;                         /* Random salt in first block (will salt the rest through CBC) */
-        u_int8_t length[4];                     /* The amount of data following the header */
-        u_int8_t magic[TwoFish_MAGIC_LEN];      /* Magic to identify successful decryption  */
+    {   uint32_t salt;                         /* Random salt in first block (will salt the rest through CBC) */
+        uint8_t length[4];                     /* The amount of data following the header */
+        uint8_t magic[TwoFish_MAGIC_LEN];      /* Magic to identify successful decryption  */
     }   header; 
     bool qBlockDefined;
     bool dontflush;
@@ -146,7 +146,7 @@ extern bool TwoFish_srand;			/* if set to TRUE (default), first call of TwoFishI
  *  Output:	Pointer to TWOFISH structure. This data structure contains key dependent data.
  *			This pointer is used with all other crypt functions.
  */
-TWOFISH *TwoFishInit(const u_int8_t *userkey, u_int32_t keysize );
+TWOFISH *TwoFishInit(const uint8_t *userkey, uint32_t keysize );
 
 
 /*	TwoFish Destroy
@@ -169,7 +169,7 @@ void TwoFishDestroy(TWOFISH *tfdata);
  *
  *	Output:	Returns a pointer to the memory allocated.
  */
-void *TwoFishAlloc(u_int32_t len,bool binhex,bool decrypt,TWOFISH *tfdata);
+void *TwoFishAlloc(uint32_t len,bool binhex,bool decrypt,TWOFISH *tfdata);
 
 
 /*	TwoFish Free
@@ -193,7 +193,7 @@ void TwoFishFree(TWOFISH *tfdata);
  *
  *	Output:	(none)
  */
-void TwoFishSetOutput(u_int8_t *outp,TWOFISH *tfdata);
+void TwoFishSetOutput(uint8_t *outp,TWOFISH *tfdata);
 
 
 /*	TwoFish Raw Encryption
@@ -207,7 +207,7 @@ void TwoFishSetOutput(u_int8_t *outp,TWOFISH *tfdata);
  *
  *	Output:	The amount of bytes encrypted if successful, otherwise 0.
  */
-u_int32_t TwoFishEncryptRaw(u_int8_t *in,u_int8_t *out,u_int32_t len,TWOFISH *tfdata);
+uint32_t TwoFishEncryptRaw(uint8_t *in,uint8_t *out,uint32_t len,TWOFISH *tfdata);
 
 /*	TwoFish Raw Decryption 
  *	
@@ -220,7 +220,7 @@ u_int32_t TwoFishEncryptRaw(u_int8_t *in,u_int8_t *out,u_int32_t len,TWOFISH *tf
  *
  *	Output:	The amount of bytes decrypted if successful, otherwise 0.
  */
-u_int32_t TwoFishDecryptRaw(u_int8_t *in,u_int8_t *out,u_int32_t len,TWOFISH *tfdata);
+uint32_t TwoFishDecryptRaw(uint8_t *in,uint8_t *out,uint32_t len,TWOFISH *tfdata);
 
 
 /*	TwoFish Encryption 
@@ -242,7 +242,7 @@ u_int32_t TwoFishDecryptRaw(u_int8_t *in,u_int8_t *out,u_int32_t len,TWOFISH *tf
  *
  *	Output:	The amount of bytes encrypted if successful, otherwise 0.
  */
-u_int32_t TwoFishEncrypt(u_int8_t *in,u_int8_t **out,signed long len,bool binhex,TWOFISH *tfdata);
+uint32_t TwoFishEncrypt(uint8_t *in,uint8_t **out,signed long len,bool binhex,TWOFISH *tfdata);
 
 
 /*	TwoFish Decryption 
@@ -264,29 +264,29 @@ u_int32_t TwoFishEncrypt(u_int8_t *in,u_int8_t **out,signed long len,bool binhex
  *
  *	Output:	The amount of bytes decrypted if successful, otherwise 0.
  */
-u_int32_t TwoFishDecrypt(u_int8_t *in,u_int8_t **out,signed long len,bool binhex,TWOFISH *tfdata);
+uint32_t TwoFishDecrypt(uint8_t *in,uint8_t **out,signed long len,bool binhex,TWOFISH *tfdata);
 
 
 /**** Private Functions ****/
 
-u_int8_t TwoFish__b(u_int32_t x,int n);
-void _TwoFish_BinHex(u_int8_t *buf,u_int32_t len,bool bintohex);
-u_int32_t _TwoFish_CryptRawCBC(u_int8_t *in,u_int8_t *out,u_int32_t len,bool decrypt,TWOFISH *tfdata);
-u_int32_t _TwoFish_CryptRaw16(u_int8_t *in,u_int8_t *out,u_int32_t len,bool decrypt,TWOFISH *tfdata);
-u_int32_t _TwoFish_CryptRaw(u_int8_t *in,u_int8_t *out,u_int32_t len,bool decrypt,TWOFISH *tfdata);
+uint8_t TwoFish__b(uint32_t x,int n);
+void _TwoFish_BinHex(uint8_t *buf,uint32_t len,bool bintohex);
+uint32_t _TwoFish_CryptRawCBC(uint8_t *in,uint8_t *out,uint32_t len,bool decrypt,TWOFISH *tfdata);
+uint32_t _TwoFish_CryptRaw16(uint8_t *in,uint8_t *out,uint32_t len,bool decrypt,TWOFISH *tfdata);
+uint32_t _TwoFish_CryptRaw(uint8_t *in,uint8_t *out,uint32_t len,bool decrypt,TWOFISH *tfdata);
 void _TwoFish_PrecomputeMDSmatrix(void);	
 void _TwoFish_MakeSubKeys(TWOFISH *tfdata);	
-void _TwoFish_qBlockPush(u_int8_t *p,u_int8_t *c,TWOFISH *tfdata);
-void _TwoFish_qBlockPop(u_int8_t *p,u_int8_t *c,TWOFISH *tfdata);
+void _TwoFish_qBlockPush(uint8_t *p,uint8_t *c,TWOFISH *tfdata);
+void _TwoFish_qBlockPop(uint8_t *p,uint8_t *c,TWOFISH *tfdata);
 void _TwoFish_ResetCBC(TWOFISH *tfdata);
-void _TwoFish_FlushOutput(u_int8_t *b,u_int32_t len,TWOFISH *tfdata);
-void _TwoFish_BlockCrypt(u_int8_t *in,u_int8_t *out,u_int32_t size,int decrypt,TWOFISH *tfdata);
-void _TwoFish_BlockCrypt16(u_int8_t *in,u_int8_t *out,bool decrypt,TWOFISH *tfdata);
-u_int32_t _TwoFish_RS_MDS_Encode(u_int32_t k0,u_int32_t k1);
-u_int32_t _TwoFish_F32(u_int32_t k64Cnt,u_int32_t x,u_int32_t *k32);
-u_int32_t _TwoFish_Fe320(u_int32_t *lsBox,u_int32_t x);
-u_int32_t _TwoFish_Fe323(u_int32_t *lsBox,u_int32_t x);
-u_int32_t _TwoFish_Fe32(u_int32_t *lsBox,u_int32_t x,u_int32_t R);
+void _TwoFish_FlushOutput(uint8_t *b,uint32_t len,TWOFISH *tfdata);
+void _TwoFish_BlockCrypt(uint8_t *in,uint8_t *out,uint32_t size,int decrypt,TWOFISH *tfdata);
+void _TwoFish_BlockCrypt16(uint8_t *in,uint8_t *out,bool decrypt,TWOFISH *tfdata);
+uint32_t _TwoFish_RS_MDS_Encode(uint32_t k0,uint32_t k1);
+uint32_t _TwoFish_F32(uint32_t k64Cnt,uint32_t x,uint32_t *k32);
+uint32_t _TwoFish_Fe320(uint32_t *lsBox,uint32_t x);
+uint32_t _TwoFish_Fe323(uint32_t *lsBox,uint32_t x);
+uint32_t _TwoFish_Fe32(uint32_t *lsBox,uint32_t x,uint32_t R);
 
 
 #endif

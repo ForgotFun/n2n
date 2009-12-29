@@ -47,7 +47,7 @@ bool TwoFish_srand=TRUE;				/* if TRUE, first call of TwoFishInit will seed rand
 /* of TwoFishInit */
 
 /* Fixed 8x8 permutation S-boxes */
-static const u_int8_t TwoFish_P[2][256] =
+static const uint8_t TwoFish_P[2][256] =
   {
     {  /* p0 */
       0xA9, 0x67, 0xB3, 0xE8,   0x04, 0xFD, 0xA3, 0x76,   0x9A, 0x92, 0x80, 0x78,
@@ -100,29 +100,29 @@ static const u_int8_t TwoFish_P[2][256] =
   };
 
 static bool TwoFish_MDSready=FALSE;
-static u_int32_t TwoFish_MDS[4][256]; /* TwoFish_MDS matrix */
+static uint32_t TwoFish_MDS[4][256]; /* TwoFish_MDS matrix */
 
 
 #define	TwoFish_LFSR1(x) (((x)>>1)^(((x)&0x01)?TwoFish_MDS_GF_FDBK/2:0))
 #define	TwoFish_LFSR2(x) (((x)>>2)^(((x)&0x02)?TwoFish_MDS_GF_FDBK/2:0)^(((x)&0x01)?TwoFish_MDS_GF_FDBK/4:0))
 
-#define	TwoFish_Mx_1(x) ((u_int32_t)(x))		/* force result to dword so << will work  */
-#define	TwoFish_Mx_X(x) ((u_int32_t)((x)^TwoFish_LFSR2(x)))	/* 5B */
-#define	TwoFish_Mx_Y(x) ((u_int32_t)((x)^TwoFish_LFSR1(x)^TwoFish_LFSR2(x)))	/* EF  */
-#define	TwoFish_RS_rem(x) { u_int8_t b=(u_int8_t)(x>>24); u_int32_t g2=((b<<1)^((b&0x80)?TwoFish_RS_GF_FDBK:0))&0xFF; u_int32_t g3=((b>>1)&0x7F)^((b&1)?TwoFish_RS_GF_FDBK>>1:0)^g2; x=(x<<8)^(g3<<24)^(g2<<16)^(g3<<8)^b; }
+#define	TwoFish_Mx_1(x) ((uint32_t)(x))		/* force result to dword so << will work  */
+#define	TwoFish_Mx_X(x) ((uint32_t)((x)^TwoFish_LFSR2(x)))	/* 5B */
+#define	TwoFish_Mx_Y(x) ((uint32_t)((x)^TwoFish_LFSR1(x)^TwoFish_LFSR2(x)))	/* EF  */
+#define	TwoFish_RS_rem(x) { uint8_t b=(uint8_t)(x>>24); uint32_t g2=((b<<1)^((b&0x80)?TwoFish_RS_GF_FDBK:0))&0xFF; uint32_t g3=((b>>1)&0x7F)^((b&1)?TwoFish_RS_GF_FDBK>>1:0)^g2; x=(x<<8)^(g3<<24)^(g2<<16)^(g3<<8)^b; }
 
-/*#define	TwoFish__b(x,N)	(((u_int8_t *)&x)[((N)&3)^TwoFish_ADDR_XOR])*/ /* pick bytes out of a dword */
+/*#define	TwoFish__b(x,N)	(((uint8_t *)&x)[((N)&3)^TwoFish_ADDR_XOR])*/ /* pick bytes out of a dword */
 
-#define	TwoFish_b0(x)			TwoFish__b(x,0)		/* extract LSB of u_int32_t  */
+#define	TwoFish_b0(x)			TwoFish__b(x,0)		/* extract LSB of uint32_t  */
 #define	TwoFish_b1(x)			TwoFish__b(x,1)
 #define	TwoFish_b2(x)			TwoFish__b(x,2)
-#define	TwoFish_b3(x)			TwoFish__b(x,3)		/* extract MSB of u_int32_t  */
+#define	TwoFish_b3(x)			TwoFish__b(x,3)		/* extract MSB of uint32_t  */
 
-u_int8_t TwoFish__b(u_int32_t x,int n)
+uint8_t TwoFish__b(uint32_t x,int n)
 {	n&=3;
   while(n-->0)
     x>>=8;
-  return (u_int8_t)x;
+  return (uint8_t)x;
 }
 
 
@@ -138,10 +138,10 @@ u_int8_t TwoFish__b(u_int32_t x,int n)
  *		This pointer is used with all other crypt functions.
  */
 
-TWOFISH *TwoFishInit(const u_int8_t *userkey, u_int32_t keysize)
+TWOFISH *TwoFishInit(const uint8_t *userkey, uint32_t keysize)
 {  TWOFISH *tfdata;
   int i,x,m;
-  u_int8_t tkey[TwoFish_KEY_LENGTH+40];
+  uint8_t tkey[TwoFish_KEY_LENGTH+40];
 
   memset( tkey, 0, TwoFish_KEY_LENGTH+40 );
   tfdata=(TWOFISH *)malloc(sizeof(TWOFISH));			/* allocate the TwoFish structure */
@@ -191,8 +191,8 @@ void TwoFishDestroy(TWOFISH *tfdata)
 
 
 /* en/decryption with CBC mode */
-u_int32_t _TwoFish_CryptRawCBC(u_int8_t *in,u_int8_t *out,u_int32_t len,bool decrypt,TWOFISH *tfdata)
-{	u_int32_t rl;
+uint32_t _TwoFish_CryptRawCBC(uint8_t *in,uint8_t *out,uint32_t len,bool decrypt,TWOFISH *tfdata)
+{	uint32_t rl;
 
   rl=len;											/* remember how much data to crypt. */
   while(len>TwoFish_BLOCK_SIZE)					/* and now we process block by block. */
@@ -210,7 +210,7 @@ u_int32_t _TwoFish_CryptRawCBC(u_int8_t *in,u_int8_t *out,u_int32_t len,bool dec
 }
 
 /* en/decryption on one block only */
-u_int32_t _TwoFish_CryptRaw16(u_int8_t *in,u_int8_t *out,u_int32_t len,bool decrypt,TWOFISH *tfdata)
+uint32_t _TwoFish_CryptRaw16(uint8_t *in,uint8_t *out,uint32_t len,bool decrypt,TWOFISH *tfdata)
 {	/* qBlockPlain already zero'ed through ResetCBC  */
   memcpy(tfdata->qBlockPlain,in,len);					/* toss the data into it. */
   _TwoFish_BlockCrypt16(tfdata->qBlockPlain,tfdata->qBlockCrypt,decrypt,tfdata); /* encrypt just that block without CBC. */
@@ -219,7 +219,7 @@ u_int32_t _TwoFish_CryptRaw16(u_int8_t *in,u_int8_t *out,u_int32_t len,bool decr
 }
 
 /* en/decryption without reset of CBC and output assignment */
-u_int32_t _TwoFish_CryptRaw(u_int8_t *in,u_int8_t *out,u_int32_t len,bool decrypt,TWOFISH *tfdata)
+uint32_t _TwoFish_CryptRaw(uint8_t *in,uint8_t *out,uint32_t len,bool decrypt,TWOFISH *tfdata)
 {
   if(in!=NULL && out!=NULL && len>0 && tfdata!=NULL)		/* if we have valid data, then... */
     {	if(len>TwoFish_BLOCK_SIZE)							/* ...check if we have more than one block. */
@@ -243,9 +243,9 @@ u_int32_t _TwoFish_CryptRaw(u_int8_t *in,u_int8_t *out,u_int32_t len,bool decryp
  *	Output:	The amount of bytes encrypted if successful, otherwise 0.
  */
 
-u_int32_t TwoFishEncryptRaw(u_int8_t *in,
-			    u_int8_t *out,
-			    u_int32_t len,
+uint32_t TwoFishEncryptRaw(uint8_t *in,
+			    uint8_t *out,
+			    uint32_t len,
 			    TWOFISH *tfdata)
 {	_TwoFish_ResetCBC(tfdata);							/* reset CBC flag. */
   tfdata->output=out;							/* output straight into output buffer. */
@@ -264,9 +264,9 @@ u_int32_t TwoFishEncryptRaw(u_int8_t *in,
  *	Output:	The amount of bytes decrypted if successful, otherwise 0.
  */
 
-u_int32_t TwoFishDecryptRaw(u_int8_t *in,
-			    u_int8_t *out,
-			    u_int32_t len,
+uint32_t TwoFishDecryptRaw(uint8_t *in,
+			    uint8_t *out,
+			    uint32_t len,
 			    TWOFISH *tfdata)
 {	_TwoFish_ResetCBC(tfdata);							/* reset CBC flag. */
   tfdata->output=out;							/* output straight into output buffer. */
@@ -300,7 +300,7 @@ void TwoFishFree(TWOFISH *tfdata)
  *	Output:	(none)
  */
 
-void TwoFishSetOutput(u_int8_t *outp,TWOFISH *tfdata)
+void TwoFishSetOutput(uint8_t *outp,TWOFISH *tfdata)
 {	tfdata->output=outp;				/* (do we really need a function for this?) */
 }
 
@@ -315,7 +315,7 @@ void TwoFishSetOutput(u_int8_t *outp,TWOFISH *tfdata)
  *	Output:	Returns a pointer to the memory allocated.
  */
 
-void *TwoFishAlloc(u_int32_t len,bool binhex,bool decrypt,TWOFISH *tfdata)
+void *TwoFishAlloc(uint32_t len,bool binhex,bool decrypt,TWOFISH *tfdata)
 {
   /*	TwoFishFree(tfdata);	*/			/* (don't for now) discard whatever was allocated earlier. */
   if(decrypt)							/* if decrypting... */
@@ -334,8 +334,8 @@ void *TwoFishAlloc(u_int32_t len,bool binhex,bool decrypt,TWOFISH *tfdata)
 }
 
 /* bin2hex and hex2bin conversion */
-void _TwoFish_BinHex(u_int8_t *buf,u_int32_t len,bool bintohex)
-{	u_int8_t *pi,*po,c;
+void _TwoFish_BinHex(uint8_t *buf,uint32_t len,bool bintohex)
+{	uint8_t *pi,*po,c;
 
   if(bintohex)
     {	for(pi=buf+len-1,po=buf+(2*len)-1;len>0;pi--,po--,len--) /* let's start from the end of the bin block. */
@@ -391,12 +391,12 @@ void _TwoFish_BinHex(u_int8_t *buf,u_int32_t len,bool bintohex)
  *	Output:	The amount of bytes encrypted if successful, otherwise 0.
  */
 
-u_int32_t TwoFishEncrypt(u_int8_t *in,
-			 u_int8_t **out,
+uint32_t TwoFishEncrypt(uint8_t *in,
+			 uint8_t **out,
 			 signed long len,
 			 bool binhex,
 			 TWOFISH *tfdata)
-{	u_int32_t ilen,olen;
+{	uint32_t ilen,olen;
 
 
 #if 0
@@ -415,14 +415,14 @@ u_int32_t TwoFishEncrypt(u_int8_t *in,
       if(*out!=NULL)
 	{	tfdata->output=*out;							/* set output buffer. */
 	  tfdata->header.salt=rand()*65536+rand();		/* toss in some salt. */
-	  tfdata->header.length[0]= (u_int8_t)(ilen);
-	  tfdata->header.length[1]= (u_int8_t)(ilen>>8);
-	  tfdata->header.length[2]= (u_int8_t)(ilen>>16);
-	  tfdata->header.length[3]= (u_int8_t)(ilen>>24);
+	  tfdata->header.length[0]= (uint8_t)(ilen);
+	  tfdata->header.length[1]= (uint8_t)(ilen>>8);
+	  tfdata->header.length[2]= (uint8_t)(ilen>>16);
+	  tfdata->header.length[3]= (uint8_t)(ilen>>24);
 	  memcpy(tfdata->header.magic,TwoFish_MAGIC,TwoFish_MAGIC_LEN); /* set the magic. */
 	  olen=TwoFish_BLOCK_SIZE;						/* set output counter. */
 	  _TwoFish_ResetCBC(tfdata);						/* reset the CBC flag */
-	  _TwoFish_BlockCrypt((u_int8_t *)&(tfdata->header),*out,olen,FALSE,tfdata); /* encrypt first block (without flush on 16 byte boundary). */
+	  _TwoFish_BlockCrypt((uint8_t *)&(tfdata->header),*out,olen,FALSE,tfdata); /* encrypt first block (without flush on 16 byte boundary). */
 	  olen+=_TwoFish_CryptRawCBC(in,*out+TwoFish_BLOCK_SIZE,ilen,FALSE,tfdata);	/* and encrypt the rest (we do not reset the CBC flag). */
 	  if(binhex)									/* if binhex... */
 	    {	_TwoFish_BinHex(*out,olen,TRUE);		/* ...convert output to binhex... */
@@ -455,14 +455,14 @@ u_int32_t TwoFishEncrypt(u_int8_t *in,
  *	Output:	The amount of bytes decrypted if successful, otherwise 0.
  */
 
-u_int32_t TwoFishDecrypt(u_int8_t *in,
-			 u_int8_t **out,
+uint32_t TwoFishDecrypt(uint8_t *in,
+			 uint8_t **out,
 			 signed long len,
 			 bool binhex,
 			 TWOFISH *tfdata)
-{	u_int32_t ilen,elen,olen;
-  const u_int8_t cmagic[TwoFish_MAGIC_LEN]=TwoFish_MAGIC;
-  u_int8_t *tbuf;
+{	uint32_t ilen,elen,olen;
+  const uint8_t cmagic[TwoFish_MAGIC_LEN]=TwoFish_MAGIC;
+  uint8_t *tbuf;
 
 
 
@@ -486,7 +486,7 @@ u_int32_t TwoFishDecrypt(u_int8_t *in,
 	    }
 	  _TwoFish_ResetCBC(tfdata);						/* reset the CBC flag. */
 
-	  tbuf=(u_int8_t *)malloc(ilen+TwoFish_BLOCK_SIZE); /* get memory for data and header. */
+	  tbuf=(uint8_t *)malloc(ilen+TwoFish_BLOCK_SIZE); /* get memory for data and header. */
 	  if(tbuf==NULL)
 	    return 0;
 	  tfdata->output=tbuf;					/* set output to temp buffer. */
@@ -515,10 +515,10 @@ u_int32_t TwoFishDecrypt(u_int8_t *in,
 }
 
 void _TwoFish_PrecomputeMDSmatrix(void)	/* precompute the TwoFish_MDS matrix */
-{   u_int32_t m1[2];
-  u_int32_t mX[2];
-  u_int32_t mY[2];
-  u_int32_t i, j;
+{   uint32_t m1[2];
+  uint32_t mX[2];
+  uint32_t mY[2];
+  uint32_t i, j;
 
   for (i = 0; i < 256; i++)
     {   j = TwoFish_P[0][i]       & 0xFF; /* compute all the matrix elements */
@@ -553,14 +553,14 @@ void _TwoFish_PrecomputeMDSmatrix(void)	/* precompute the TwoFish_MDS matrix */
 
 
 void _TwoFish_MakeSubKeys(TWOFISH *tfdata)	/* Expand a user-supplied key material into a session key. */
-{	u_int32_t k64Cnt    = TwoFish_KEY_LENGTH / 8;
-  u_int32_t k32e[4]; /* even 32-bit entities */
-  u_int32_t k32o[4]; /* odd 32-bit entities */
-  u_int32_t sBoxKey[4];
-  u_int32_t offset,i,j;
-  u_int32_t A, B, q=0;
-  u_int32_t k0,k1,k2,k3;
-  u_int32_t b0,b1,b2,b3;
+{	uint32_t k64Cnt    = TwoFish_KEY_LENGTH / 8;
+  uint32_t k32e[4]; /* even 32-bit entities */
+  uint32_t k32o[4]; /* odd 32-bit entities */
+  uint32_t sBoxKey[4];
+  uint32_t offset,i,j;
+  uint32_t A, B, q=0;
+  uint32_t k0,k1,k2,k3;
+  uint32_t b0,b1,b2,b3;
 
   /* split user key material into even and odd 32-bit entities and */
   /* compute S-box keys using (12, 8) Reed-Solomon code over GF(256) */
@@ -667,13 +667,13 @@ void _TwoFish_MakeSubKeys(TWOFISH *tfdata)	/* Expand a user-supplied key materia
  * @param tfdata: Pointer to the global data structure containing session keys.
  * @return none
  */
-void _TwoFish_BlockCrypt(u_int8_t *in,u_int8_t *out,u_int32_t size,int decrypt,TWOFISH *tfdata)
-{	u_int8_t PnMinusOne[TwoFish_BLOCK_SIZE];
-  u_int8_t CnMinusOne[TwoFish_BLOCK_SIZE];
-  u_int8_t CBCplusCprime[TwoFish_BLOCK_SIZE];
-  u_int8_t Pn[TwoFish_BLOCK_SIZE];
-  u_int8_t *p,*pout;
-  u_int32_t i;
+void _TwoFish_BlockCrypt(uint8_t *in,uint8_t *out,uint32_t size,int decrypt,TWOFISH *tfdata)
+{	uint8_t PnMinusOne[TwoFish_BLOCK_SIZE];
+  uint8_t CnMinusOne[TwoFish_BLOCK_SIZE];
+  uint8_t CBCplusCprime[TwoFish_BLOCK_SIZE];
+  uint8_t Pn[TwoFish_BLOCK_SIZE];
+  uint8_t *p,*pout;
+  uint32_t i;
 
   /* here is where we implement CBC mode and cipher block stealing */
   if(size==TwoFish_BLOCK_SIZE)
@@ -752,7 +752,7 @@ void _TwoFish_BlockCrypt(u_int8_t *in,u_int8_t *out,u_int32_t size,int decrypt,T
     }
 }
 
-void _TwoFish_qBlockPush(u_int8_t *p,u_int8_t *c,TWOFISH *tfdata)
+void _TwoFish_qBlockPush(uint8_t *p,uint8_t *c,TWOFISH *tfdata)
 {	if(tfdata->qBlockDefined)
     _TwoFish_FlushOutput(tfdata->qBlockCrypt,TwoFish_BLOCK_SIZE,tfdata);
   memcpy(tfdata->prevCipher,tfdata->qBlockPlain,TwoFish_BLOCK_SIZE);
@@ -761,7 +761,7 @@ void _TwoFish_qBlockPush(u_int8_t *p,u_int8_t *c,TWOFISH *tfdata)
   tfdata->qBlockDefined=TRUE;
 }
 
-void _TwoFish_qBlockPop(u_int8_t *p,u_int8_t *c,TWOFISH *tfdata)
+void _TwoFish_qBlockPop(uint8_t *p,uint8_t *c,TWOFISH *tfdata)
 {	memcpy(p,tfdata->qBlockPlain,TwoFish_BLOCK_SIZE );
   memcpy(c,tfdata->qBlockCrypt,TwoFish_BLOCK_SIZE );
   tfdata->qBlockDefined=FALSE;
@@ -773,17 +773,17 @@ void _TwoFish_ResetCBC(TWOFISH *tfdata)
   memset(tfdata->qBlockPlain,0,TwoFish_BLOCK_SIZE);
 }
 
-void _TwoFish_FlushOutput(u_int8_t *b,u_int32_t len,TWOFISH *tfdata)
-{	u_int32_t i;
+void _TwoFish_FlushOutput(uint8_t *b,uint32_t len,TWOFISH *tfdata)
+{	uint32_t i;
 
   for(i=0;i<len && !tfdata->dontflush;i++)
     *tfdata->output++ = *b++;
   tfdata->dontflush=FALSE;
 }
 
-void _TwoFish_BlockCrypt16(u_int8_t *in,u_int8_t *out,bool decrypt,TWOFISH *tfdata)
-{	u_int32_t x0,x1,x2,x3;
-  u_int32_t k,t0,t1,R;
+void _TwoFish_BlockCrypt16(uint8_t *in,uint8_t *out,bool decrypt,TWOFISH *tfdata)
+{	uint32_t x0,x1,x2,x3;
+  uint32_t k,t0,t1,R;
 
 
   x0=*in++;
@@ -860,25 +860,25 @@ void _TwoFish_BlockCrypt16(u_int8_t *in,u_int8_t *out,bool decrypt,TWOFISH *tfda
       x1 ^= tfdata->subKeys[7];
     }
 
-  *out++ = (u_int8_t)(x2      );
-  *out++ = (u_int8_t)(x2 >>  8);
-  *out++ = (u_int8_t)(x2 >> 16);
-  *out++ = (u_int8_t)(x2 >> 24);
+  *out++ = (uint8_t)(x2      );
+  *out++ = (uint8_t)(x2 >>  8);
+  *out++ = (uint8_t)(x2 >> 16);
+  *out++ = (uint8_t)(x2 >> 24);
 
-  *out++ = (u_int8_t)(x3      );
-  *out++ = (u_int8_t)(x3 >>  8);
-  *out++ = (u_int8_t)(x3 >> 16);
-  *out++ = (u_int8_t)(x3 >> 24);
+  *out++ = (uint8_t)(x3      );
+  *out++ = (uint8_t)(x3 >>  8);
+  *out++ = (uint8_t)(x3 >> 16);
+  *out++ = (uint8_t)(x3 >> 24);
 
-  *out++ = (u_int8_t)(x0      );
-  *out++ = (u_int8_t)(x0 >>  8);
-  *out++ = (u_int8_t)(x0 >> 16);
-  *out++ = (u_int8_t)(x0 >> 24);
+  *out++ = (uint8_t)(x0      );
+  *out++ = (uint8_t)(x0 >>  8);
+  *out++ = (uint8_t)(x0 >> 16);
+  *out++ = (uint8_t)(x0 >> 24);
 
-  *out++ = (u_int8_t)(x1      );
-  *out++ = (u_int8_t)(x1 >>  8);
-  *out++ = (u_int8_t)(x1 >> 16);
-  *out++ = (u_int8_t)(x1 >> 24);
+  *out++ = (uint8_t)(x1      );
+  *out++ = (uint8_t)(x1 >>  8);
+  *out++ = (uint8_t)(x1 >> 16);
+  *out++ = (uint8_t)(x1 >> 24);
 }
 
 /**
@@ -889,8 +889,8 @@ void _TwoFish_BlockCrypt16(u_int8_t *in,u_int8_t *out,bool decrypt,TWOFISH *tfda
  * @param  k1  2nd 32-bit entity.
  * @return  Remainder polynomial generated using RS code
  */
-u_int32_t _TwoFish_RS_MDS_Encode(u_int32_t k0,u_int32_t k1)
-{	u_int32_t i,r;
+uint32_t _TwoFish_RS_MDS_Encode(uint32_t k0,uint32_t k1)
+{	uint32_t i,r;
 
   for(r=k1,i=0;i<4;i++) /* shift 1 byte at a time */
     TwoFish_RS_rem(r);
@@ -901,9 +901,9 @@ u_int32_t _TwoFish_RS_MDS_Encode(u_int32_t k0,u_int32_t k1)
   return r;
 }
 
-u_int32_t _TwoFish_F32(u_int32_t k64Cnt,u_int32_t x,u_int32_t *k32)
-{   u_int8_t b0,b1,b2,b3;
-  u_int32_t k0,k1,k2,k3,result = 0;
+uint32_t _TwoFish_F32(uint32_t k64Cnt,uint32_t x,uint32_t *k32)
+{   uint8_t b0,b1,b2,b3;
+  uint32_t k0,k1,k2,k3,result = 0;
 
   b0=TwoFish_b0(x);
   b1=TwoFish_b1(x);
@@ -944,21 +944,21 @@ u_int32_t _TwoFish_F32(u_int32_t k64Cnt,u_int32_t x,u_int32_t *k32)
   return result;
 }
 
-u_int32_t _TwoFish_Fe320(u_int32_t *lsBox,u_int32_t x)
+uint32_t _TwoFish_Fe320(uint32_t *lsBox,uint32_t x)
 {   return lsBox[        TwoFish_b0(x)<<1    ]^
     lsBox[      ((TwoFish_b1(x)<<1)|1)]^
     lsBox[0x200+ (TwoFish_b2(x)<<1)   ]^
     lsBox[0x200+((TwoFish_b3(x)<<1)|1)];
 }
 
-u_int32_t _TwoFish_Fe323(u_int32_t *lsBox,u_int32_t x)
+uint32_t _TwoFish_Fe323(uint32_t *lsBox,uint32_t x)
 {   return lsBox[       (TwoFish_b3(x)<<1)   ]^
     lsBox[      ((TwoFish_b0(x)<<1)|1)]^
     lsBox[0x200+ (TwoFish_b1(x)<<1)   ]^
     lsBox[0x200+((TwoFish_b2(x)<<1)|1)];
 }
 
-u_int32_t _TwoFish_Fe32(u_int32_t *lsBox,u_int32_t x,u_int32_t R)
+uint32_t _TwoFish_Fe32(uint32_t *lsBox,uint32_t x,uint32_t R)
 {   return lsBox[      2*TwoFish__b(x,R  )  ]^
     lsBox[      2*TwoFish__b(x,R+1)+1]^
     lsBox[0x200+2*TwoFish__b(x,R+2)  ]^
@@ -982,12 +982,12 @@ int main(int argc, char* argv[])
     char outbuf[4096];
     char * outp = outbuf;
 
-    u_int8_t key[] = { 0xfc, 0x77, 0x1a, 0xda, 0xaa };
+    uint8_t key[] = { 0xfc, 0x77, 0x1a, 0xda, 0xaa };
     TWOFISH *tfa = TwoFishInit( key, 5 );
     TWOFISH *tfb = TwoFishInit( key, 5 );
 
-    u_int8_t out[2048], out2[2048];
-    u_int8_t in[TEST_DATA_SIZE];
+    uint8_t out[2048], out2[2048];
+    uint8_t in[TEST_DATA_SIZE];
 
     for ( i=0; i<TEST_DATA_SIZE; ++i )
     {

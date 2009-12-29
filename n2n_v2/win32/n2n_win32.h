@@ -11,9 +11,16 @@
 #define _CRT_SECURE_NO_WARNINGS
 #endif
 
+#if defined(__MINGW32__)
+/* should be defined here and before winsock gets included */
+#define _WIN32_WINNT 0x501 //Otherwise the linker doesnt find getaddrinfo
+#include <inttypes.h>
+#endif /* #if defined(__MINGW32__) */
+
 #include <winsock2.h>
 #include <windows.h>
 #include <winioctl.h>
+
 
 #include "wintap.h"
 
@@ -91,9 +98,9 @@ typedef struct tuntap_dev {
 	char *device_name;
 	char *ifName;
 	OVERLAPPED overlap_read, overlap_write;
-	u_int8_t      mac_addr[6];
-	u_int32_t     ip_addr, device_mask;
-	u_int         mtu;
+	uint8_t      mac_addr[6];
+	uint32_t     ip_addr, device_mask;
+	unsigned int mtu;
 } tuntap_dev;
 
 #define index(a, b) strchr(a, b)
