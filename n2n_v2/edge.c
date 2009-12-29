@@ -282,7 +282,7 @@ static int edge_init(n2n_edge_t * eee)
     transop_twofish_init( &(eee->transop[N2N_TRANSOP_TF_IDX]  ) );
     transop_aes_init( &(eee->transop[N2N_TRANSOP_AESCBC_IDX]  ) );
 
-    eee->tx_transop_idx = N2N_TRANSOP_TF_IDX;
+    eee->tx_transop_idx = N2N_TRANSOP_NULL_IDX; /* No guarantee the others have been setup */
 
     eee->daemon = 1;    /* By default run in daemon mode. */
     eee->re_resolve_supernode_ip = 0;
@@ -1172,7 +1172,7 @@ static size_t edge_choose_tx_transop( const n2n_edge_t * eee )
 {
     if ( eee->null_transop)
     {
-        return N2N_TRANSFORM_ID_NULL;
+        return N2N_TRANSOP_NULL_IDX;
     }
 
     return eee->tx_transop_idx;
@@ -2036,7 +2036,8 @@ int main(int argc, char* argv[])
             {
                 strncpy( eee.keyschedule, optarg, N2N_PATHNAME_MAXLEN-1 );
                 eee.keyschedule[N2N_PATHNAME_MAXLEN-1]=0; /* strncpy does not add NULL if the source has no NULL. */
-                fprintf(stderr, "keyfile = %s.\n", eee.keyschedule);
+                traceEvent(TRACE_DEBUG, "keyfile = '%s'\n", eee.keyschedule);
+                fprintf(stderr, "keyfile = '%s'\n", eee.keyschedule);
             }
             break;
         }
@@ -2093,6 +2094,7 @@ int main(int argc, char* argv[])
                 fprintf(stderr, "Error: -K and -k options are mutually exclusive.\n");
                 exit(1);
             } else {
+                traceEvent(TRACE_DEBUG, "encrypt_key = '%s'\n", encrypt_key);
                 encrypt_key = strdup(optarg);
             }
             break;
@@ -2196,6 +2198,8 @@ int main(int argc, char* argv[])
 
     if ( (NULL == encrypt_key ) && ( 0 == strlen(eee.keyschedule)) )
     {
+        traceEvent(TRACE_WARNING, "Encryption is disabled in edge.");
+        
         eee.null_transop = 1;
     }
 
