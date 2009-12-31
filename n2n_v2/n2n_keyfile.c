@@ -34,7 +34,10 @@ char *strsep( char **ppsz_string, const char *psz_delimiters )
 
 
 /* Parse hex nibbles in ascii until a non-nibble character is found. Nibble
- * characters are 0-9, a-f and A-F. */
+ * characters are 0-9, a-f and A-F. 
+ *
+ * Return number of bytes parsed into keyBuf or a negative error code.
+ */
 ssize_t n2n_parse_hex( uint8_t * keyBuf, 
                        size_t keyLen, 
                        const char * textKey,

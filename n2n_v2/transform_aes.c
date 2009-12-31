@@ -82,6 +82,32 @@ static size_t aes_choose_tx_sa( transop_aes_t * priv )
 #define TRANSOP_AES_NONCE_SIZE   4
 #define TRANSOP_AES_SA_SIZE      4
 
+
+#define AES256_KEY_BYTES (256/8)
+#define AES192_KEY_BYTES (192/8)
+#define AES128_KEY_BYTES (128/8)
+
+/* Return the best acceptable AES key size (in bytes) given an input keysize. 
+ *
+ * The value returned will be one of AES128_KEY_BYTES, AES192_KEY_BYTES or
+ * AES256_KEY_BYTES.
+ */
+static size_t aes_best_keysize(size_t numBytes)
+{
+    if (numBytes >= AES256_KEY_BYTES )
+    {
+        return AES256_KEY_BYTES;
+    }
+    else if (numBytes >= AES192_KEY_BYTES)
+    {
+        return AES192_KEY_BYTES;
+    }
+    else
+    {
+        return AES128_KEY_BYTES;
+    }
+}
+
 /** The aes packet format consists of:
  *
  *  - a 8-bit aes encoding version in clear text
@@ -326,7 +352,10 @@ static int transop_addspec_aes( n2n_trans_op_t * arg, const n2n_cipherspec_t * c
             pstat = n2n_parse_hex( keybuf, N2N_MAX_KEYSIZE, sep+1, s );
             if ( pstat > 0 )
             {
+                /* pstat is number of bytes read into keybuf. */
                 sa_aes_t * sa = &(priv->sa[priv->num_sa]);
+                size_t aes_keysize_bytes;
+                size_t aes_keysize_bits;
 
                 /* Clear out any old possibly longer key matter. */
                 memset( &(sa->enc_key), 0, sizeof(AES_KEY) );
@@ -335,14 +364,19 @@ static int transop_addspec_aes( n2n_trans_op_t * arg, const n2n_cipherspec_t * c
                 memset( &(sa->enc_ivec), 0, sizeof(N2N_AES_IVEC_SIZE) );
                 memset( &(sa->dec_ivec), 0, sizeof(N2N_AES_IVEC_SIZE) );
 
+                aes_keysize_bytes = aes_best_keysize(pstat);
+                aes_keysize_bits = 8 * aes_keysize_bytes;
+
                 /* Use N2N_MAX_KEYSIZE because the AES key needs to be of fixed
                  * size. If fewer bits specified then the rest will be
-                 * zeroes. */
-                AES_set_encrypt_key( keybuf, N2N_MAX_KEYSIZE*8, &(sa->enc_key));
-                AES_set_encrypt_key( keybuf, N2N_MAX_KEYSIZE*8, &(sa->dec_key));
+                 * zeroes. AES acceptable key sizes are 128, 192 and 256
+                 * bits. */
+                AES_set_encrypt_key( keybuf, aes_keysize_bits, &(sa->enc_key));
+                AES_set_encrypt_key( keybuf, aes_keysize_bits, &(sa->dec_key));
                 /* Leave ivecs set to all zeroes */
                 
-                traceEvent( TRACE_DEBUG, "transop_addspec_aes sa_id=%u data=%s.\n",
+                traceEvent( TRACE_DEBUG, "transop_addspec_aes sa_id=%u, %u bits data=%s.\n",
+                            aes_keysize_bits, aes_keysize_bits, 
                             priv->sa[priv->num_sa].sa_id, sep+1);
                 
                 ++(priv->num_sa);

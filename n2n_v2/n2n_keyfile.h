@@ -62,7 +62,7 @@
 #include "n2n_wire.h"
 #include <time.h>
 
-#define N2N_MAX_KEYSIZE         265
+#define N2N_MAX_KEYSIZE         256             /* bytes */
 #define N2N_MAX_NUM_CIPHERSPECS 8
 #define N2N_KEYPATH_SIZE        256
 #define N2N_KEYFILE_LINESIZE    256
