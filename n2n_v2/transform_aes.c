@@ -372,7 +372,7 @@ static int transop_addspec_aes( n2n_trans_op_t * arg, const n2n_cipherspec_t * c
                  * zeroes. AES acceptable key sizes are 128, 192 and 256
                  * bits. */
                 AES_set_encrypt_key( keybuf, aes_keysize_bits, &(sa->enc_key));
-                AES_set_encrypt_key( keybuf, aes_keysize_bits, &(sa->dec_key));
+                AES_set_decrypt_key( keybuf, aes_keysize_bits, &(sa->dec_key));
                 /* Leave ivecs set to all zeroes */
                 
                 traceEvent( TRACE_DEBUG, "transop_addspec_aes sa_id=%u, %u bits data=%s.\n",
