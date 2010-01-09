@@ -376,8 +376,7 @@ static int transop_addspec_aes( n2n_trans_op_t * arg, const n2n_cipherspec_t * c
                 /* Leave ivecs set to all zeroes */
                 
                 traceEvent( TRACE_DEBUG, "transop_addspec_aes sa_id=%u, %u bits data=%s.\n",
-                            aes_keysize_bits, aes_keysize_bits, 
-                            priv->sa[priv->num_sa].sa_id, sep+1);
+                            priv->sa[priv->num_sa].sa_id, aes_keysize_bits, sep+1);
                 
                 ++(priv->num_sa);
                 retval = 0;
