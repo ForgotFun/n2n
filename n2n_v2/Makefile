@@ -12,8 +12,16 @@ WARN?=-Wall -Wshadow -Wpointer-arith -Wmissing-declarations -Wnested-externs
 PLATOPTS_SPARC64=-mcpu=ultrasparc -pipe -fomit-frame-pointer -ffast-math -finline-functions -fweb -frename-registers -mapp-regs
 
 N2N_DEFINES=
-# If AES needs to be conditional
-#N2N_DEFINES+="-DN2N_HAVE_AES"
+N2N_OBJS_OPT=
+LIBS_EDGE_OPT=
+
+N2N_OPTION_AES?="yes"
+#N2N_OPTION_AES=no
+
+ifeq ($(N2N_OPTION_AES), "yes")
+    N2N_DEFINES+="-DN2N_HAVE_AES"
+    LIBS_EDGE_OPT+=-lcrypto
+endif
 
 CFLAGS+=$(DEBUG) $(WARN) $(OPTIONS) $(PLATOPTS) $(N2N_DEFINES)
 
@@ -37,7 +45,7 @@ N2N_LIB=n2n.a
 N2N_OBJS=n2n.o n2n_keyfile.o wire.o minilzo.o twofish.o \
          transform_null.o transform_tf.o transform_aes.o \
          tuntap_freebsd.o tuntap_netbsd.o tuntap_linux.o tuntap_osx.o version.o
-LIBS_EDGE=-lcrypto
+LIBS_EDGE+=$(LIBS_EDGE_OPT)
 LIBS_SN=
 
 #For OpenSolaris (Solaris too?)
@@ -61,6 +69,9 @@ test: test.c $(N2N_LIB) n2n_wire.h n2n.h Makefile
 
 supernode: sn.c $(N2N_LIB) n2n.h Makefile
 	$(CC) $(CFLAGS) sn.c $(N2N_LIB) $(LIBS_SN) -o supernode
+
+benchmark: benchmark.c $(N2N_LIB) n2n_wire.h n2n.h Makefile
+	$(CC) $(CFLAGS) benchmark.c $(N2N_LIB) $(LIBS_SN) -o benchmark
 
 .c.o: n2n.h n2n_keyfile.h n2n_transforms.h n2n_wire.h twofish.h Makefile
 	$(CC) $(CFLAGS) -c $<

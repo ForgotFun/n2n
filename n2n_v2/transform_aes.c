@@ -5,6 +5,10 @@
 
 #include "n2n.h"
 #include "n2n_transforms.h"
+
+#if defined(N2N_HAVE_AES)
+
+
 #include "openssl/aes.h"
 #ifndef _MSC_VER
 /* Not included in Visual Studio 2008 */
@@ -492,3 +496,102 @@ int transop_aes_init( n2n_trans_op_t * ttt )
 
     return retval;
 }
+
+#else /* #if defined(N2N_HAVE_AES) */
+
+struct transop_aes
+{
+    ssize_t             tx_sa;
+};
+
+typedef struct transop_aes transop_aes_t;
+
+
+static int transop_deinit_aes( n2n_trans_op_t * arg )
+{
+    transop_aes_t * priv = (transop_aes_t *)arg->priv;
+
+    if ( priv )
+    {
+        free(priv);
+    }
+
+    arg->priv=NULL; /* return to fully uninitialised state */
+
+    return 0;
+}
+
+static int transop_encode_aes( n2n_trans_op_t * arg,
+                                   uint8_t * outbuf,
+                                   size_t out_len,
+                                   const uint8_t * inbuf,
+                                   size_t in_len )
+{
+    return -1;
+}
+
+static int transop_decode_aes( n2n_trans_op_t * arg,
+                                   uint8_t * outbuf,
+                                   size_t out_len,
+                                   const uint8_t * inbuf,
+                                   size_t in_len )
+{
+    return -1;
+}
+
+static int transop_addspec_aes( n2n_trans_op_t * arg, const n2n_cipherspec_t * cspec )
+{
+    traceEvent( TRACE_DEBUG, "transop_addspec_aes AES not built into edge.\n");
+
+    return -1;
+}
+
+static n2n_tostat_t transop_tick_aes( n2n_trans_op_t * arg, time_t now )
+{
+    n2n_tostat_t r;
+
+    memset( &r, 0, sizeof(r) );
+
+    return r;
+}
+
+int transop_aes_init( n2n_trans_op_t * ttt )
+{
+    int retval = 1;
+    transop_aes_t * priv = NULL;
+
+    if ( ttt->priv )
+    {
+        transop_deinit_aes( ttt );
+    }
+
+    memset( ttt, 0, sizeof( n2n_trans_op_t ) );
+
+    priv = (transop_aes_t *) malloc( sizeof(transop_aes_t) );
+
+    if ( NULL != priv )
+    {
+        /* install the private structure. */
+        ttt->priv = priv;
+        priv->tx_sa=0; /* We will use this sa index for encoding. */
+
+        ttt->transform_id = N2N_TRANSFORM_ID_AESCBC;
+        ttt->addspec = transop_addspec_aes;
+        ttt->tick = transop_tick_aes; /* chooses a new tx_sa */
+        ttt->deinit = transop_deinit_aes;
+        ttt->fwd = transop_encode_aes;
+        ttt->rev = transop_decode_aes;
+
+        retval = 0;
+    }
+    else
+    {
+        memset( ttt, 0, sizeof(n2n_trans_op_t) );
+        traceEvent( TRACE_ERROR, "Failed to allocate priv for aes" );
+    }
+
+    return retval;
+}
+
+#endif /* #if defined(N2N_HAVE_AES) */
+
