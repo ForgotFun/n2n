@@ -1135,7 +1135,6 @@ static int send_PACKET( n2n_edge_t * eee,
     ssize_t s;
     n2n_sock_str_t sockbuf;
     n2n_sock_t destination;
-    struct sockaddr_in destsock;
 
     /* hexdump( pktbuf, pktlen ); */
 
@@ -1149,8 +1148,6 @@ static int send_PACKET( n2n_edge_t * eee,
     {
         ++(eee->tx_sup);
     }
-
-    fill_sockaddr( (struct sockaddr *)&destsock, sizeof(destsock), &destination );
 
     traceEvent( TRACE_INFO, "send_PACKET to %s", sock_to_cstr( sockbuf, &destination ) );
 
