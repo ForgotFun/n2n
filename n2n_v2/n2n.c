@@ -17,6 +17,7 @@
  *
  * Code contributions courtesy of:
  * Massimo Torquati <torquati@ntop.org>
+ * Matt Gilg
  *
  */
 
@@ -36,7 +37,7 @@
 
 
 const uint8_t broadcast_addr[6] = { 0xFF, 0xFF, 0xFF, 0xFF, 0xFF, 0xFF };
-const uint8_t multicast_addr[6] = { 0x01, 0x00, 0x05, 0x00, 0x00, 0x00 }; /* First 3 bytes are meaningful */
+const uint8_t multicast_addr[6] = { 0x01, 0x00, 0x5E, 0x00, 0x00, 0x00 }; /* First 3 bytes are meaningful */
 
 /* ************************************** */
 
@@ -181,8 +182,12 @@ char * macaddr_str( macstr_t buf,
 /* *********************************************** */
 
 uint8_t is_multi_broadcast(const uint8_t * dest_mac) {
-    return(((!memcmp(broadcast_addr, dest_mac, 6))
-            || (!memcmp(multicast_addr, dest_mac, 3))) ? 1 : 0);
+
+       int is_broadcast = ( memcmp(broadcast_addr, dest_mac, 6) == 0 );
+       int is_multicast = ( memcmp(multicast_addr, dest_mac, 3) == 0 );
+
+       return is_broadcast || is_multicast;
+
 }
 
 /* http://www.faqs.org/rfcs/rfc908.html */
