@@ -89,9 +89,15 @@ set the netmask of edge interface in IPv4 dotted decimal notation. The default
 is 255.255.255.0 (ie. /24).
 .TP
 \-r
-enable packet forwarding/routing through the n2n virtual LAN. Without this
-option, packets arriving over n2n are dropped if not for the -a <addr> (or DHCP
-assigned) IP address of the edge interface.
+enable IP packet forwarding/routing through the n2n virtual LAN. Without this
+option, IP packets arriving over n2n are dropped if not for the -a <addr> (or
+DHCP assigned) IP address of the edge interface.
+.TP
+\-E 
+accept packets destined for multicast ethernet MAC addresses. These addresses
+are used in multicast ethernet and IPv6 neighbour discovery. If this option is
+not present these multicast packets are discarded as most users do not need or
+understand them.
 .TP
 \-v
 more verbose logging (may be specified several times for more verbosity).

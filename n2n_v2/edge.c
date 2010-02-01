@@ -486,7 +486,7 @@ static void help() {
 	 "\n"
 	 "-l <supernode host:port> "
 	 "[-p <local port>] [-M <mtu>] "
-	 "[-r] [-v] [-b] [-h]\n\n");
+	 "[-r] [-E] [-v] [-b] [-h]\n\n");
 
 #ifdef __linux__
   printf("-d <tun device>          | tun device name\n");
@@ -512,6 +512,7 @@ static void help() {
          "                         : eg. -m 01:02:03:04:05:06\n");
   printf("-M <mtu>                 | Specify n2n MTU of edge interface (default %d).\n", DEFAULT_MTU);
   printf("-r                       | Enable packet forwarding through n2n community.\n");
+  printf("-E                       | Accept multicast MAC addresses (default=drop).\n");
   printf("-v                       | Make more verbose. Repeat as required.\n");
 
   printf("\nEnvironment variables:\n");
@@ -2018,7 +2019,7 @@ int main(int argc, char* argv[])
     optarg = NULL;
     while((opt = getopt_long(effectiveargc,
                              effectiveargv,
-                             "K:k:a:bc:u:g:m:M:s:d:l:p:fvhrt", long_options, NULL)) != EOF)
+                             "K:k:a:bc:Eu:g:m:M:s:d:l:p:fvhrt", long_options, NULL)) != EOF)
     {
         switch (opt)
         {
@@ -2049,6 +2050,12 @@ int main(int argc, char* argv[])
         {
             memset( eee.community_name, 0, N2N_COMMUNITY_SIZE );
             strncpy( (char *)eee.community_name, optarg, N2N_COMMUNITY_SIZE);
+            break;
+        }
+        case 'E': /* multicast ethernet addresses accepted. */
+        {
+            eee.drop_multicast=0;
+            traceEvent(TRACE_DEBUG, "Enabling ethernet multicast traffic\n");
             break;
         }
 
