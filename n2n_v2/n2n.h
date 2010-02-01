@@ -77,6 +77,7 @@
 #ifdef __linux__
 #include <linux/if.h>
 #include <linux/if_tun.h>
+#define N2N_CAN_NAME_IFACE 1
 #endif /* #ifdef __linux__ */
 
 #ifdef __FreeBSD__
