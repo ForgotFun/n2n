@@ -4,6 +4,7 @@
  *
  * Contributions by:
  *    Lukasz Taczuk
+ *    Struan Bartlett
  */
 
 
@@ -132,7 +133,6 @@ static int update_edge( n2n_sn_t * sss,
         memcpy(scan->community_name, community, sizeof(n2n_community_t) );
         memcpy(&(scan->mac_addr), edgeMac, sizeof(n2n_mac_t));
         memcpy(&(scan->sock), sender_sock, sizeof(n2n_sock_t));
-        scan->last_seen = now;
 
         /* insert this guy at the head of the edges list */
         scan->next = sss->edges;     /* first in list */
@@ -150,7 +150,6 @@ static int update_edge( n2n_sn_t * sss,
         {
             memcpy(scan->community_name, community, sizeof(n2n_community_t) );
             memcpy(&(scan->sock), sender_sock, sizeof(n2n_sock_t));
-            scan->last_seen = now;
 
             traceEvent( TRACE_INFO, "update_edge updated   %s ==> %s",
                         macaddr_str( mac_buf, edgeMac ),
@@ -165,6 +164,7 @@ static int update_edge( n2n_sn_t * sss,
 
     }
 
+    scan->last_seen = now;
     return 0;
 }
 
