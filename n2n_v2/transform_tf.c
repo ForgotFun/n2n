@@ -403,6 +403,7 @@ int transop_twofish_setup( n2n_trans_op_t * ttt,
         priv->tx_sa=0;
         sa = &(priv->sa[priv->tx_sa]);
         sa->sa_id=sa_num;
+        sa->spec.valid_until = 0x7fffffff;
 
         /* This is a preshared key setup. Both Tx and Rx are using the same security association. */
 
