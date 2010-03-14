@@ -52,6 +52,7 @@ tuntap_netbsd.c
 tuntap_osx.c
 twofish.c
 twofish.h
+version.c
 wire.c
 edge.8
 supernode.1

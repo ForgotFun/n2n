@@ -1,10 +1,12 @@
 
-N2N_VERSION="2.1.0"
+N2N_VERSION=2.1.0
+N2N_OSNAME=$(shell uname -p)
 
 ########
 
 CC=gcc
 DEBUG?=-g3
+#OPTIMIZATION?=-O2
 WARN?=-Wall -Wshadow -Wpointer-arith -Wmissing-declarations -Wnested-externs
 
 #Ultrasparc64 users experiencing SIGBUS should try the following gcc options
@@ -23,7 +25,7 @@ ifeq ($(N2N_OPTION_AES), "yes")
     LIBS_EDGE_OPT+=-lcrypto
 endif
 
-CFLAGS+=$(DEBUG) $(WARN) $(OPTIONS) $(PLATOPTS) $(N2N_DEFINES)
+CFLAGS+=$(DEBUG) $(OPTIMIZATION) $(WARN) $(OPTIONS) $(PLATOPTS) $(N2N_DEFINES)
 
 INSTALL=install
 MKDIR=mkdir -p
@@ -83,14 +85,11 @@ $(N2N_LIB): $(N2N_OBJS)
 	ar rcs $(N2N_LIB) $(N2N_OBJS)
 #	$(RANLIB) $@
 
-version.c:
-	@echo "---- Version $(N2N_VERSION) ----"
-	@echo $(N2N_VERSION) | sed -e 's/.*/const char * n2n_sw_version   = "&";/' > version.c
-	@uname | sed -e 's/.*/const char * n2n_sw_osName    = "&";/' >> version.c
-	@date +"%D %r" | sed -e 's/.*/const char * n2n_sw_buildDate = "&";/' >> version.c
+version.o: Makefile
+	$(CC) $(CFLAGS) -DN2N_VERSION='"$(N2N_VERSION)"' -DN2N_OSNAME='"$(N2N_OSNAME)"' -c version.c
 
 clean:
-	rm -rf $(N2N_OBJS) $(N2N_LIB) $(APPS) $(DOCS) test *.dSYM *~ version.c
+	rm -rf $(N2N_OBJS) $(N2N_LIB) $(APPS) $(DOCS) test *.dSYM *~
 
 install: edge supernode edge.8.gz supernode.1.gz n2n_v2.7.gz
 	echo "MANDIR=$(MANDIR)"
