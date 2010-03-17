@@ -38,6 +38,7 @@
 
 const uint8_t broadcast_addr[6] = { 0xFF, 0xFF, 0xFF, 0xFF, 0xFF, 0xFF };
 const uint8_t multicast_addr[6] = { 0x01, 0x00, 0x5E, 0x00, 0x00, 0x00 }; /* First 3 bytes are meaningful */
+const uint8_t ipv6_multicast_addr[6] = { 0x33, 0x33, 0x00, 0x00, 0x00, 0x00 }; /* First 2 bytes are meaningful */
 
 /* ************************************** */
 
@@ -185,8 +186,9 @@ uint8_t is_multi_broadcast(const uint8_t * dest_mac) {
 
        int is_broadcast = ( memcmp(broadcast_addr, dest_mac, 6) == 0 );
        int is_multicast = ( memcmp(multicast_addr, dest_mac, 3) == 0 );
+       int is_ipv6_multicast = ( memcmp(ipv6_multicast_addr, dest_mac, 2) == 0 );
 
-       return is_broadcast || is_multicast;
+       return is_broadcast || is_multicast || is_ipv6_multicast;
 
 }
 
