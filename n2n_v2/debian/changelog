@@ -1,3 +1,9 @@
+n2n (2.1.0.a1-1) unstable; urgency=low
+
+  * Move manpage for edge to section 8.
+
+ -- Kim Hansen <kim@i9.dk>  Tue, 16 Mar 2010 16:12:30 +0100
+
 n2n (2.0-1) hardy; urgency=low
 
   * New upstream release
