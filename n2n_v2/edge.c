@@ -1468,9 +1468,9 @@ static void readFromMgmtSocket( n2n_edge_t * eee, int * keep_running )
 
     }
 
-    if ( recvlen >= 4 )
+    if ( recvlen >= 5 )
     {
-        if ( 0 == memcmp( udp_buf, "+verb", 4 ) )
+        if ( 0 == memcmp( udp_buf, "+verb", 5 ) )
         {
             msg_len=0;
             ++traceLevel;
@@ -1485,7 +1485,7 @@ static void readFromMgmtSocket( n2n_edge_t * eee, int * keep_running )
             return;
         }
 
-        if ( 0 == memcmp( udp_buf, "-verb", 4 ) )
+        if ( 0 == memcmp( udp_buf, "-verb", 5 ) )
         {
             msg_len=0;
 
