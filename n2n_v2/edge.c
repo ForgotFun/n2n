@@ -1955,8 +1955,6 @@ int main(int argc, char* argv[])
         exit(1);
     }
 
-    traceEvent( TRACE_NORMAL, "Starting n2n edge %s %s", n2n_sw_version, n2n_sw_buildDate );
-
     if( getenv( "N2N_KEY" ))
     {
         encrypt_key = strdup( getenv( "N2N_KEY" ));
@@ -2114,8 +2112,7 @@ int main(int argc, char* argv[])
             if ( eee.sn_num < N2N_EDGE_NUM_SUPERNODES )
             {
                 strncpy( (eee.sn_ip_array[eee.sn_num]), optarg, N2N_EDGE_SN_HOST_SIZE);
-                fprintf(stderr, "Adding supernode[%u] = %s\n", (unsigned int)eee.sn_num, (eee.sn_ip_array[eee.sn_num]) );
-
+                traceEvent(TRACE_DEBUG, "Adding supernode[%u] = %s\n", (unsigned int)eee.sn_num, (eee.sn_ip_array[eee.sn_num]) );
                 ++eee.sn_num;
             }
             else
@@ -2173,9 +2170,25 @@ int main(int argc, char* argv[])
     }
 
 
+#ifdef N2N_HAVE_DAEMON
+    if ( eee.daemon )
+    {
+        useSyslog=1; /* traceEvent output now goes to syslog. */
+        if ( -1 == daemon( 0, 0 ) )
+        {
+            traceEvent( TRACE_ERROR, "Failed to become daemon." );
+            exit(-5);
+        }
+    }
+#endif /* #ifdef N2N_HAVE_DAEMON */
+
+
+    traceEvent( TRACE_NORMAL, "Starting n2n edge %s %s", n2n_sw_version, n2n_sw_buildDate );
+
+
     for (i=0; i< N2N_EDGE_NUM_SUPERNODES; ++i )
     {
-        fprintf( stderr, "supernode %u => %s\n", i, (eee.sn_ip_array[i]) );
+        traceEvent( TRACE_NORMAL, "supernode %u => %s\n", i, (eee.sn_ip_array[i]) );
     }
 
     supernode2addr( &(eee.supernode), eee.sn_ip_array[eee.sn_idx] );
@@ -2271,18 +2284,6 @@ int main(int argc, char* argv[])
         return(-1);
     }
 
-
-#ifdef N2N_HAVE_DAEMON
-    if ( eee.daemon )
-    {
-        useSyslog=1; /* traceEvent output now goes to syslog. */
-        if ( -1 == daemon( 0, 0 ) )
-        {
-            traceEvent( TRACE_ERROR, "Failed to become daemon." );
-            exit(-5);
-        }
-    }
-#endif /* #ifdef N2N_HAVE_DAEMON */
 
     traceEvent(TRACE_NORMAL, "edge started");
 

@@ -653,12 +653,25 @@ int main( int argc, char * const argv[] )
                 break;
             case 'v': /* verbose */
                 ++traceLevel;
-                traceEvent( TRACE_DEBUG, "debug increased" );
                 break;
             }
         }
         
     }
+
+#if defined(N2N_HAVE_DAEMON)
+    if (sss.daemon)
+    {
+        useSyslog=1; /* traceEvent output now goes to syslog. */
+        if ( -1 == daemon( 0, 0 ) )
+        {
+            traceEvent( TRACE_ERROR, "Failed to become daemon." );
+            exit(-5);
+        }
+    }
+#endif /* #if defined(N2N_HAVE_DAEMON) */
+
+    traceEvent( TRACE_DEBUG, "traceLevel is %d", traceLevel);
 
     sss.sock = open_socket(sss.lport, 1 /*bind ANY*/ );
     if ( -1 == sss.sock )
@@ -681,18 +694,6 @@ int main( int argc, char * const argv[] )
     {
         traceEvent( TRACE_NORMAL, "supernode is listening on UDP %u (management)", N2N_SN_MGMT_PORT );
     }
-
-#if defined(N2N_HAVE_DAEMON)
-    if (sss.daemon)
-    {
-        useSyslog=1; /* traceEvent output now goes to syslog. */
-        if ( -1 == daemon( 0, 0 ) )
-        {
-            traceEvent( TRACE_ERROR, "Failed to become daemon." );
-            exit(-5);
-        }
-    }
-#endif /* #if defined(N2N_HAVE_DAEMON) */
 
     traceEvent(TRACE_NORMAL, "supernode started");
 
