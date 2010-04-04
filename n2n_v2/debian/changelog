@@ -1,9 +1,10 @@
 n2n (2.1.0-1) unstable; urgency=low
 
+  * Split package in two.
   * Move manpage for edge to section 8.
   * Install manpage for n2n_v2 to section 7.
 
- -- Kim Hansen <kim@i9.dk>  Tue, 16 Mar 2010 16:12:30 +0100
+ -- Kim Hansen <kim@i9.dk>  Tue, 27 Mar 2010 22:00:00 +0100
 
 n2n (2.0-1) hardy; urgency=low
 

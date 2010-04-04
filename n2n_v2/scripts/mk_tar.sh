@@ -61,10 +61,11 @@ debian/changelog
 debian/compat
 debian/control
 debian/copyright
-debian/n2n.dirs
-debian/n2n.docs
-debian/n2n.install
-debian/n2n.manpages
+debian/n2n-edge.docs
+debian/n2n-edge.install
+debian/n2n-supernode.install
+debian/n2n-edge.manpages
+debian/n2n-supernode.manpages
 debian/README.Debian
 debian/rules
 "
