@@ -475,7 +475,7 @@ static void help() {
 	 "-a [static:|dhcp:]<tun IP address> "
 	 "-c <community> "
 	 "[-k <encrypt key> | -K <key file>] "
-	 "-s <netmask> "
+	 "[-s <netmask>] "
 #if defined(N2N_HAVE_SETUID)
 	 "[-u <uid> -g <gid>]"
 #endif /* #ifndef N2N_HAVE_SETUID */

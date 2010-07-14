@@ -3,7 +3,8 @@
 edge \- n2n edge node daemon
 .SH SYNOPSIS
 .B edge
-[\-d <tun device>] \-a <tun IP address> \-c <community> {\-k <encrypt key>|\-K <keyfile>} \-l <supernode host:port> 
+[\-d <tun device>] \-a <tun IP address> \-c <community> {\-k <encrypt key>|\-K <keyfile>} 
+[\-s <netmask>] \-l <supernode host:port> 
 [\-p <local port>] [\-u <UID>] [\-g <GID>] [-f] [\-m <MAC address>] [\-r] [\-v]
 .SH DESCRIPTION
 N2N is a peer-to-peer VPN system. Edge is the edge node daemon for n2n which
@@ -14,7 +15,7 @@ begin to find other nodes in the community.
 .SH OPTIONS
 .TP
 \-d <name>
-sets the TAP device name as seen in ifconfig.
+sets the TAP device name as seen in ifconfig. Only available on Linux.
 .TP
 \-a {<addr>|static:<addr>|dhcp:0.0.0.0}
 sets the n2n virtual LAN IP address being claimed. This is a private IP
@@ -62,6 +63,11 @@ can be specified by two invocations of -l <addr>:<port>. eg.
 binds edge to the given UDP port. Useful for keeping the same external socket
 across restarts of edge. This allows peer edges which know the edge socket to
 continue p2p operation without going back to the supernode.
+.TP
+\-t <num>
+binds the edge management system to the given UDP port. Default 5644. Use this
+if you need to run multiple instance of edge; or something is bound to that
+port.
 .TP
 \-u <uid>
 causes the edge process to drop to the given user ID when privileges are no
