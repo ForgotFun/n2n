@@ -1,6 +1,6 @@
 Summary: N2N peer-to-peer virtual private network system.
 Name: n2n
-Version: 2.0
+Version: 2.1.0
 Release: 1
 License: GPLv3
 Vendor: ntop.org
