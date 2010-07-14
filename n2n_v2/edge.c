@@ -214,13 +214,14 @@ static int readConfFile(const char * filename, char * const linebuffer) {
 }
 
 /* Create the argv vector */
-static char ** buildargv(char * const linebuffer) {
+static char ** buildargv(int * effectiveargc, char * const linebuffer) {
   const int  INITIAL_MAXARGC = 16;	/* Number of args + NULL in initial argv */
   int     maxargc;
   int     argc=0;
   char ** argv;
   char *  buffer, * buff;
 
+  *effectiveargc = 0;
   buffer = (char *)calloc(1, strlen(linebuffer)+2);
   if (!buffer) {
     traceEvent( TRACE_ERROR, "Unable to allocate memory");
@@ -256,8 +257,8 @@ static char ** buildargv(char * const linebuffer) {
       break;
     }
   }
-  argv[argc] = NULL;
   free(buffer);
+  *effectiveargc = argc;
   return argv;
 }
 
@@ -2003,11 +2004,8 @@ int main(int argc, char* argv[])
         linebuffer[strlen(linebuffer)-1]= '\0';
 
     /* build the new argv from the linebuffer */
-    effectiveargv = buildargv(linebuffer);
+    effectiveargv = buildargv(&effectiveargc, linebuffer);
 
-    effectiveargc =0;
-    while (effectiveargv[effectiveargc]) ++effectiveargc;
-    effectiveargv[effectiveargc] = 0;
     if (linebuffer)
     {
         free(linebuffer);
