@@ -469,9 +469,9 @@ static void help() {
   print_n2n_version();
 
   printf("edge "
-#if defined(N2N_CAN_RENAME_IFACE)
+#if defined(N2N_CAN_NAME_IFACE)
 	 "-d <tun device> "
-#endif /* #if defined(N2N_CAN_RENAME_IFACE) */
+#endif /* #if defined(N2N_CAN_NAME_IFACE) */
 	 "-a [static:|dhcp:]<tun IP address> "
 	 "-c <community> "
 	 "[-k <encrypt key> | -K <key file>] "
