@@ -486,7 +486,7 @@ static void help() {
 	 "\n"
 	 "-l <supernode host:port> "
 	 "[-p <local port>] [-M <mtu>] "
-	 "[-r] [-E] [-v] [-b] [-h]\n\n");
+	 "[-r] [-E] [-v] [-t <mgmt port>] [-b] [-h]\n\n");
 
 #ifdef __linux__
   printf("-d <tun device>          | tun device name\n");
@@ -514,6 +514,7 @@ static void help() {
   printf("-r                       | Enable packet forwarding through n2n community.\n");
   printf("-E                       | Accept multicast MAC addresses (default=drop).\n");
   printf("-v                       | Make more verbose. Repeat as required.\n");
+  printf("-t                       | Management UDP Port (for multiple edges on a machine).\n");
 
   printf("\nEnvironment variables:\n");
   printf("  N2N_KEY                | Encryption key (ASCII). Not with -K or -k.\n" );
@@ -1928,6 +1929,7 @@ int main(int argc, char* argv[])
 {
     int     opt;
     int     local_port = 0 /* any port */;
+    int     mgmt_port = N2N_EDGE_MGMT_PORT; /* 5644 by default */
     char    tuntap_dev_name[N2N_IFNAMSIZ] = "edge0";
     char    ip_mode[N2N_IF_MODE_SIZE]="static";
     char    ip_addr[N2N_NETMASK_STR_SIZE] = "";
@@ -2142,6 +2144,12 @@ int main(int argc, char* argv[])
             local_port = atoi(optarg);
             break;
         }
+        
+        case 't':
+        {
+            mgmt_port = atoi(optarg);
+            break;
+        }
 
         case 's': /* Subnet Mask */
         {
@@ -2277,7 +2285,8 @@ int main(int argc, char* argv[])
         return(-1);
     }
 
-    eee.udp_mgmt_sock = open_socket(N2N_EDGE_MGMT_PORT, 0 /* bind LOOPBACK*/ );
+    eee.udp_mgmt_sock = open_socket(mgmt_port, 0 /* bind LOOPBACK*/ );
+
     if(eee.udp_mgmt_sock < 0)
     {
         traceEvent( TRACE_ERROR, "Failed to bind management UDP port %u", (unsigned int)N2N_EDGE_MGMT_PORT );
