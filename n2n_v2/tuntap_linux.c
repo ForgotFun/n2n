@@ -100,8 +100,17 @@ int tuntap_open(tuntap_dev *device,
       traceEvent(TRACE_INFO, "Setting MAC: %s", buf);
   }
 
-  snprintf(buf, sizeof(buf), "/sbin/ifconfig %s %s netmask %s mtu %d up",
-           ifr.ifr_name, device_ip, device_mask, mtu);
+  if ( 0 == strncmp( "dhcp", address_mode, 5 ) )
+  {
+      snprintf(buf, sizeof(buf), "/sbin/ifconfig %s %s mtu %d up",
+               ifr.ifr_name, device_ip, mtu);
+  }
+  else
+  {
+      snprintf(buf, sizeof(buf), "/sbin/ifconfig %s %s netmask %s mtu %d up",
+               ifr.ifr_name, device_ip, device_mask, mtu);
+  }
+
   system(buf);
   traceEvent(TRACE_INFO, "Bringing up: %s", buf);
 
