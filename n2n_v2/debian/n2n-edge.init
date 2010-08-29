@@ -126,4 +126,4 @@ case "$1" in
 	;;
 esac
 
-
+true  # Set exit status to 0 (succes)
