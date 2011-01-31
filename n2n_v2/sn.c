@@ -741,15 +741,20 @@ static int run_loop( n2n_sn_t * sss )
                 bread = recvfrom( sss->sock, pktbuf, N2N_SN_PKTBUF_SIZE, 0/*flags*/,
 				  (struct sockaddr *)&sender_sock, (socklen_t*)&i);
 
-                if ( bread <= 0 )
+                if ( bread < 0 ) /* For UDP bread of zero just means no data (unlike TCP). */
                 {
+                    /* The fd is no good now. Maybe we lost our interface. */
                     traceEvent( TRACE_ERROR, "recvfrom() failed %d errno %d (%s)", bread, errno, strerror(errno) );
                     keep_running=0;
                     break;
                 }
 
                 /* We have a datagram to process */
-                process_udp( sss, &sender_sock, pktbuf, bread, now );
+                if ( bread > 0 )
+                {
+                    /* And the datagram has data (not just a header) */
+                    process_udp( sss, &sender_sock, pktbuf, bread, now );
+                }
             }
 
             if (FD_ISSET(sss->mgmt_sock, &socket_mask)) 
