@@ -28,6 +28,9 @@
 #include <assert.h>
 #include <sys/stat.h>
 #include "minilzo.h"
+#ifdef N2N_MULTIPLE_SUPERNODES
+#include "sn_multiple.h"
+#endif
 
 #if defined(DEBUG)
 #define SOCKET_TIMEOUT_INTERVAL_SECS    5
@@ -79,7 +82,11 @@
 
 typedef char n2n_sn_name_t[N2N_EDGE_SN_HOST_SIZE];
 
-#define N2N_EDGE_NUM_SUPERNODES 2
+#ifdef N2N_MULTIPLE_SUPERNODES
+    #define N2N_EDGE_NUM_SUPERNODES           N2N_MAX_SN_PER_COMM
+#else
+    #define N2N_EDGE_NUM_SUPERNODES 2
+#endif
 #define N2N_EDGE_SUP_ATTEMPTS   3       /* Number of failed attmpts before moving on to next supernode. */
 
 
@@ -127,6 +134,13 @@ struct n2n_edge
     size_t              rx_p2p;
     size_t              tx_sup;
     size_t              rx_sup;
+
+#ifdef N2N_MULTIPLE_SUPERNODES
+    uint8_t             snm_discovery_state;
+    int                 snm_sock;
+    sn_list_t           supernodes;
+    struct sn_info      reg_sn;
+#endif
 };
 
 /** Return the IP address of the current supernode in the ring. */
@@ -309,6 +323,12 @@ static int edge_init(n2n_edge_t * eee)
         return(-1);
     }
 
+#ifdef N2N_MULTIPLE_SUPERNODES
+    eee->snm_sock = -1;
+    eee->snm_discovery_state = N2N_SNM_STATE_DISCOVERY;
+    memset(&eee->supernodes, 0, sizeof(sn_list_t));
+#endif
+
     return(0);
 }
 
@@ -459,6 +479,16 @@ static void edge_deinit(n2n_edge_t * eee)
 
     (eee->transop[N2N_TRANSOP_TF_IDX].deinit)(&eee->transop[N2N_TRANSOP_TF_IDX]);
     (eee->transop[N2N_TRANSOP_NULL_IDX].deinit)(&eee->transop[N2N_TRANSOP_NULL_IDX]);
+
+#ifdef N2N_MULTIPLE_SUPERNODES
+    if (eee->snm_sock >= 0)
+    {
+        closesocket(eee->snm_sock);
+    }
+    eee->snm_discovery_state = 0;
+
+    clear_sn_list(&eee->supernodes.list_head);
+#endif
 }
 
 static void readFromIPSocket( n2n_edge_t * eee );
@@ -516,6 +546,10 @@ static void help() {
   printf("-E                       | Accept multicast MAC addresses (default=drop).\n");
   printf("-v                       | Make more verbose. Repeat as required.\n");
   printf("-t                       | Management UDP Port (for multiple edges on a machine).\n");
+
+#ifdef N2N_MULTIPLE_SUPERNODES
+  printf("-x <SNM port>            | SNM port.\n");
+#endif
 
   printf("\nEnvironment variables:\n");
   printf("  N2N_KEY                | Encryption key (ASCII). Not with -K or -k.\n" );
@@ -1007,6 +1041,334 @@ static void send_grat_arps(n2n_edge_t * eee,) {
 #endif /* #if defined(DUMMY_ID_00001) */
 
 
+#ifdef N2N_MULTIPLE_SUPERNODES
+
+static int load_supernodes(n2n_edge_t *eee)
+{
+    int i;
+    n2n_sock_t sn;
+
+    /* read the supernode addresses from file */
+    sprintf(eee->supernodes.filename, "EDGE_SN_%s", eee->community_name);
+
+    if (read_sn_list_from_file( eee->supernodes.filename,
+                               &eee->supernodes.list_head))
+    {
+        traceEvent(TRACE_ERROR, "Failed read supernodes from file. %s", strerror(errno));
+        exit(-2);
+    }
+
+    if (sn_list_size(eee->supernodes.list_head) == 0)
+    {
+        /* first startup: save the sn addresses given as cmd line params */
+
+        for (i = 0; i < eee->sn_num; ++i)
+        {
+            /* updating initial supernode list */
+            supernode2addr(&sn, eee->sn_ip_array[i]);
+            update_supernodes(&eee->supernodes, &sn);
+        }
+
+        /* reset sn_ip_array */
+        eee->sn_num = 0;
+        memset(eee->sn_ip_array, 0, N2N_EDGE_NUM_SUPERNODES * sizeof(n2n_sn_name_t));
+    }
+    else
+    {
+        eee->sn_num = 0;
+
+        /* fill sn_ip_array */
+        struct sn_info *sni = eee->supernodes.list_head;
+        while (sni)
+        {
+            sock_to_cstr(eee->sn_ip_array[eee->sn_num++], &sni->sn);
+            sni = sni->next;
+        }
+
+        /* set registering supernode */
+        supernode2addr(&eee->reg_sn.sn, eee->sn_ip_array[0]);
+        eee->reg_sn.timestamp = 0;
+
+        eee->snm_discovery_state = N2N_SNM_STATE_READY;
+    }
+
+    return eee->sn_num;
+}
+
+static int add_supernode(n2n_edge_t *eee, n2n_sock_t *sn)
+{
+    if (eee->sn_num == N2N_EDGE_NUM_SUPERNODES)
+    {
+        traceEvent(TRACE_ERROR, "Already have MAX supernodes addresses");
+        return -1;
+    }
+
+    int new_one = update_and_save_supernodes(&eee->supernodes, sn, 1);
+
+    if (new_one)
+    {
+        n2n_sock_str_t sock_str;
+        sock_to_cstr(sock_str, sn);
+
+        strncpy((eee->sn_ip_array[eee->sn_num]), sock_str, N2N_EDGE_SN_HOST_SIZE);
+
+        traceEvent(TRACE_DEBUG, "Added supernode[%u] = %s\n", eee->sn_num, sock_str);
+
+        ++eee->sn_num;
+    }
+
+    return 0;
+}
+
+static void edge_send_snm_req(n2n_edge_t *eee, n2n_sock_t *sn);
+
+static int sn_rank(struct sn_info *sni)
+{
+    int delta = N2N_MAX_COMM_PER_SN - sni->communities_num;
+    delta = MAX(delta, 1);
+    return (sni->timestamp * 100 / delta);
+}
+
+static int sn_cmp_rank_asc(struct sn_info *l, struct sn_info *r)
+{
+    return (sn_rank(l) - sn_rank(r));
+}
+
+static void supernodes_discovery(n2n_edge_t *eee, time_t nowTime)
+{
+    int i;
+    struct sn_info *crt = NULL, *prev = NULL;
+
+    if (nowTime - eee->start_time < N2N_SUPER_DISCOVERY_INTERVAL)
+    {
+        return;
+    }
+
+    if (eee->snm_discovery_state == N2N_SNM_STATE_DISCOVERY)
+    {
+        sn_list_sort(&eee->supernodes.list_head, sn_cmp_rank_asc);
+
+        /* save the best supernodes */
+        i   = 0;
+        crt = eee->supernodes.list_head;
+
+        while (i < N2N_MIN_SN_PER_COMM && crt != NULL)
+        {
+            i++;
+            prev = crt;
+            crt  = crt->next;
+        }
+
+        /* if none, give it another try */
+        if (i == 0)
+            return;
+
+        /* remove the rest */
+        prev->next = NULL;
+        clear_sn_list(&crt);
+
+        eee->snm_discovery_state = N2N_SNM_STATE_REQ_ADV;
+
+        /* send requests for ADV */
+        crt = eee->supernodes.list_head;
+        while (crt)
+        {
+            edge_send_snm_req(eee, &crt->sn);
+            crt = crt->next;
+        }
+
+        /* clear supernodes */
+        clear_sn_list(&eee->supernodes.list_head);
+    }
+    else if (eee->snm_discovery_state == N2N_SNM_STATE_REQ_ADV)
+    {
+        //TODO rediscovery
+    }
+}
+
+static void deregister_supernodes( n2n_edge_t *eee )
+{
+    struct sn_info *sni = eee->supernodes.list_head;
+    while (sni)
+    {
+        send_deregister(eee, &sni->sn);
+        sni = sni->next;
+    }
+}
+
+static void edge_send_snm_req(n2n_edge_t *eee, n2n_sock_t *sn)
+{
+    uint8_t          pktbuf[N2N_PKT_BUF_SIZE];
+    size_t           idx;
+    snm_hdr_t        hdr;
+    n2n_SNM_REQ_t    req;
+    snm_comm_name_t  comm;
+    n2n_sock_str_t   sockbuf;
+
+    hdr.type    = SNM_TYPE_REQ_LIST_MSG;
+    hdr.seq_num = 0;
+    SET_E(hdr.flags);   /* request from edge */
+    SET_N(hdr.flags);   /* request contains community name*/
+
+    if (eee->snm_discovery_state == N2N_SNM_STATE_DISCOVERY)
+        SET_S(hdr.flags);    /* request supernodes */
+    else
+        SET_A(hdr.flags);    /* request advertise */
+
+    /* fill community name */
+    comm.size = strlen((const char *) eee->community_name);
+    memcpy(comm.name, eee->community_name, comm.size);
+
+    req.comm_num = 1;
+    req.comm_ptr = &comm;
+
+    idx = 0;
+    encode_SNM_REQ(pktbuf, &idx, &hdr, &req);
+
+    log_SNM_hdr(&hdr);
+    log_SNM_REQ(&req);
+    traceEvent(TRACE_INFO, "### Tx N2N SNM_REQ to %s", sock_to_cstr(sockbuf, sn));
+
+    sendto_sock(eee->snm_sock, pktbuf, idx, sn);
+}
+
+static void readFromSNMSocket(n2n_edge_t *eee)
+{
+    snm_hdr_t           hdr;
+    uint8_t             udp_buf[N2N_PKT_BUF_SIZE];
+    ssize_t             recvlen;
+    size_t              rem;
+    size_t              idx;
+    size_t              msg_type;
+    struct sockaddr_in  sender_sock;
+    n2n_sock_t          sender;
+    n2n_sock_str_t      sockbuf;
+
+    size_t              i;
+    time_t              now = time(NULL);
+
+    i = sizeof(sender_sock);
+    recvlen = recvfrom(eee->snm_sock, udp_buf, N2N_PKT_BUF_SIZE, 0/*flags*/,
+                       (struct sockaddr *) &sender_sock, (socklen_t*) &i);
+    if (recvlen < 0)
+    {
+        traceEvent(TRACE_ERROR, "recvfrom failed with %s", strerror(errno));
+        return;
+    }
+
+    sender.family = AF_INET; /* udp_sock was opened PF_INET v4 */
+    sender.port   = ntohs(sender_sock.sin_port);
+    memcpy(&(sender.addr.v4), &(sender_sock.sin_addr.s_addr), IPV4_SIZE);
+
+    traceEvent(TRACE_INFO, "### Rx N2N SNM (%u) from %s",
+               recvlen, sock_to_cstr(sockbuf, &sender));
+
+    rem = recvlen;
+    idx = 0;
+    if (decode_SNM_hdr(&hdr, udp_buf, &rem, &idx) < 0)
+    {
+        traceEvent(TRACE_ERROR, "Failed to decode header");
+        return;
+    }
+    log_SNM_hdr(&hdr);
+
+    msg_type = hdr.type;
+
+    if (msg_type == SNM_TYPE_RSP_LIST_MSG)
+    {
+        if (eee->snm_discovery_state == N2N_SNM_STATE_READY)
+        {
+            traceEvent(TRACE_ERROR, "Received SNM RSP but edge is READY");
+            return;
+        }
+
+        n2n_SNM_INFO_t info;
+        decode_SNM_INFO(&info, &hdr, udp_buf, &rem, &idx);
+        log_SNM_INFO(&info);
+
+        if (GET_A(hdr.flags))
+        {
+            /* supernode accepted community */
+
+            if (info.comm_num != 1)
+            {
+                traceEvent(TRACE_ERROR, "Invalid ADV response: Community number=%d",
+                           info.comm_num);
+                return;
+            }
+            if (memcmp(eee->community_name, info.comm_ptr[0].name, info.comm_ptr[0].size))
+            {
+                traceEvent(TRACE_ERROR, "Invalid ADV community name: %s",
+                           info.comm_ptr[0].name);
+                return;
+            }
+
+            /* clear supernodes list */
+            clear_sn_list(&eee->supernodes.list_head);
+
+            for (i = 0; i < info.sn_num; i++)
+            {
+                n2n_sock_t *sn = &info.sn_ptr[i];
+
+                if (sn_is_zero_addr(sn))
+                    sn_cpy_addr(sn, &sender);
+
+                if (add_supernode(eee, sn))
+                    break;
+            }
+
+            eee->snm_discovery_state = N2N_SNM_STATE_READY;
+        }
+        else
+        {
+            /* still searching for supernodes */
+
+            struct sn_info *sni = sn_find(eee->supernodes.list_head, &sender);
+            sni->communities_num = info.comm_num;
+            sni->timestamp = now - sni->timestamp; /* set response time */
+
+            for (i = 0; i < info.sn_num; i++)
+            {
+                n2n_sock_t *sn = &info.sn_ptr[i];
+
+                if (!sn_find(eee->supernodes.list_head, sn))
+                {
+                    sni = sn_list_add_create(&eee->supernodes.list_head, sn);
+                    sni->timestamp = now;
+                    edge_send_snm_req(eee, sn);
+                }
+            }
+        }
+    }
+    else if (msg_type == SNM_TYPE_ADV_MSG)
+    {
+        n2n_SNM_ADV_t adv;
+        decode_SNM_ADV(&adv, &hdr, udp_buf, &rem, &idx);
+        log_SNM_ADV(&adv);
+
+        if (sn_is_zero_addr(&adv.sn))
+        {
+            sn_cpy_addr(&adv.sn, &sender);
+        }
+
+        if (add_supernode(eee, &adv.sn))
+            return;
+
+        /* Init main supernode address */
+        if (eee->sn_num == 1)
+        {
+            supernode2addr(&eee->supernode, eee->sn_ip_array[eee->sn_idx]);
+
+            eee->reg_sn.sn = eee->supernode;
+            eee->reg_sn.timestamp = 0;
+        }
+
+        eee->snm_discovery_state = N2N_SNM_STATE_READY;
+    }
+
+}
+
+#endif // N2N_MULTIPLE_SUPERNODES
 
 
 /** @brief Check to see if we should re-register with the supernode.
@@ -1036,8 +1398,22 @@ static void update_supernode_reg( n2n_edge_t * eee, time_t nowTime )
             eee->sn_idx=0;
         }
 
+#ifdef N2N_MULTIPLE_SUPERNODES
+        if (eee->reg_sn.timestamp < eee->last_register_req)      /* supernode didn't respond */
+        {
+            if (sn_cmp(&eee->supernode, &eee->reg_sn.sn) == 0)   /* supernode is the main one */
+            {
+                supernode2addr(&(eee->supernode), eee->sn_ip_array[eee->sn_idx]);
+
+                traceEvent(TRACE_WARNING, "Changed active supernode to %s", eee->sn_ip_array[eee->sn_idx]);
+            }
+#endif
         traceEvent(TRACE_WARNING, "Supernode not responding - moving to %u of %u", 
                    (unsigned int)eee->sn_idx, (unsigned int)eee->sn_num );
+
+#ifdef N2N_MULTIPLE_SUPERNODES
+        }
+#endif
 
         eee->sup_attempts = N2N_EDGE_SUP_ATTEMPTS;
     }
@@ -1046,15 +1422,23 @@ static void update_supernode_reg( n2n_edge_t * eee, time_t nowTime )
         --(eee->sup_attempts);
     }
 
+#ifdef N2N_MULTIPLE_SUPERNODES
+    /* setting next supernode to register to */
+    supernode2addr(&(eee->reg_sn.sn), eee->sn_ip_array[eee->sn_idx]);
+    eee->reg_sn.timestamp = 0;
+    send_register_super(eee, &(eee->reg_sn.sn));
+
+#else
     if(eee->re_resolve_supernode_ip || (eee->sn_num > 1) )
     {
         supernode2addr(&(eee->supernode), eee->sn_ip_array[eee->sn_idx] );
     }
 
+    send_register_super( eee, &(eee->supernode) );
+#endif
+
     traceEvent(TRACE_DEBUG, "Registering with supernode (%s) (attempts left %u)",
                supernode_ip(eee), (unsigned int)eee->sup_attempts);
-
-    send_register_super( eee, &(eee->supernode) );
 
     eee->sn_wait=1;
 
@@ -1727,13 +2111,30 @@ static void readFromIPSocket( n2n_edge_t * eee )
                 {
                     if ( ra.num_sn > 0 )
                     {
+#ifdef N2N_MULTIPLE_SUPERNODES
+                        for (i = 0; i < ra.num_sn; i++)
+                        {
+                            if (add_supernode(eee, &ra.sn_bak[i]))
+                                break;
+
+                            traceEvent(TRACE_NORMAL, "Rx REGISTER_SUPER_ACK backup supernode at %s",
+                                       sock_to_cstr(sockbuf1, &(ra.sn_bak[i])));
+                        }
+#else
                         traceEvent(TRACE_NORMAL, "Rx REGISTER_SUPER_ACK backup supernode at %s",
                                    sock_to_cstr(sockbuf1, &(ra.sn_bak) ) );
+#endif
                     }
 
                     eee->last_sup = now;
                     eee->sn_wait=0;
+
+#ifdef N2N_MULTIPLE_SUPERNODES
+                    eee->reg_sn.timestamp = now; //TODO check if sending sn is reg_sn
+                    eee->sup_attempts = 0;                     /* we got a response, so no more attempts */
+#else
                     eee->sup_attempts = N2N_EDGE_SUP_ATTEMPTS; /* refresh because we got a response */
+#endif
 
                     /* REVISIT: store sn_back */
                     eee->register_lifetime = ra.lifetime;
@@ -1950,6 +2351,10 @@ int main(int argc, char* argv[])
     char ** effectiveargv=NULL;
     char  * linebuffer = NULL;
 
+#ifdef N2N_MULTIPLE_SUPERNODES
+    int     snm_port = 0;
+#endif
+
     n2n_edge_t eee; /* single instance for this program */
 
     if (-1 == edge_init(&eee) )
@@ -2014,10 +2419,16 @@ int main(int argc, char* argv[])
 
     /* {int k;for(k=0;k<effectiveargc;++k)  printf("%s\n",effectiveargv[k]);} */
 
+#ifdef N2N_MULTIPLE_SUPERNODES
+        const char *optstring = "K:k:a:bc:Eu:g:m:M:s:d:l:p:fvhrt:x:";
+#else
+        const char *optstring = "K:k:a:bc:Eu:g:m:M:s:d:l:p:fvhrt:";
+#endif
+
     optarg = NULL;
     while((opt = getopt_long(effectiveargc,
                              effectiveargv,
-                             "K:k:a:bc:Eu:g:m:M:s:d:l:p:fvhrt:", long_options, NULL)) != EOF)
+                             optstring, long_options, NULL)) != EOF)
     {
         switch (opt)
         {
@@ -2149,6 +2560,14 @@ int main(int argc, char* argv[])
             break;
         }
 
+#ifdef N2N_MULTIPLE_SUPERNODES
+        case 'x':
+        {
+            snm_port = atoi(optarg);
+            break;
+        }
+#endif
+
         case 's': /* Subnet Mask */
         {
             if (0 != got_s)
@@ -2197,6 +2616,9 @@ int main(int argc, char* argv[])
         traceEvent( TRACE_NORMAL, "supernode %u => %s\n", i, (eee.sn_ip_array[i]) );
     }
 
+#ifdef N2N_MULTIPLE_SUPERNODES
+    if (load_supernodes(&eee) > 0)
+#endif
     supernode2addr( &(eee.supernode), eee.sn_ip_array[eee.sn_idx] );
 
 
@@ -2294,7 +2716,32 @@ int main(int argc, char* argv[])
 
     traceEvent(TRACE_NORMAL, "edge started");
 
+#ifdef N2N_MULTIPLE_SUPERNODES
+
+    eee.snm_sock = open_socket(snm_port, 1 /*bind ANY*/);
+
+    if (eee.snm_sock < 0)
+    {
+        traceEvent(TRACE_ERROR, "Failed to bind SNM UDP port %d", snm_port);
+        return(-1);
+    }
+
+    if (eee.snm_discovery_state == N2N_SNM_STATE_DISCOVERY)
+    {
+        /* send requests to all supernodes */
+        struct sn_info *sni = eee.supernodes.list_head;
+        while (sni)
+        {
+            edge_send_snm_req(&eee, &sni->sn);
+            sni = sni->next;
+        }
+    }
+
+#else
+
     update_supernode_reg(&eee, time(NULL) );
+
+#endif
 
     return run_loop(&eee);
 }
@@ -2332,6 +2779,10 @@ static int run_loop(n2n_edge_t * eee )
 #ifndef WIN32
         FD_SET(eee->device.fd, &socket_mask);
         max_sock = max( max_sock, eee->device.fd );
+#endif
+#ifdef N2N_MULTIPLE_SUPERNODES
+        FD_SET(eee->snm_sock, &socket_mask);
+        max_sock = max(max_sock, eee->snm_sock);
 #endif
 
         wait_time.tv_sec = SOCKET_TIMEOUT_INTERVAL_SECS; wait_time.tv_usec = 0;
@@ -2373,10 +2824,23 @@ static int run_loop(n2n_edge_t * eee )
                 readFromTAPSocket(eee);
             }
 #endif
+#ifdef N2N_MULTIPLE_SUPERNODES
+            if (FD_ISSET(eee->snm_sock, &socket_mask))
+            {
+                readFromSNMSocket(eee);
+            }
+#endif
         }
 
         /* Finished processing select data. */
 
+#ifdef N2N_MULTIPLE_SUPERNODES
+        if (eee->snm_discovery_state != N2N_SNM_STATE_READY)
+        {
+            supernodes_discovery(eee, nowTime);
+        }
+        else
+#endif
 
         update_supernode_reg(eee, nowTime);
 
@@ -2399,7 +2863,11 @@ static int run_loop(n2n_edge_t * eee )
 
     } /* while */
 
+#ifdef N2N_MULTIPLE_SUPERNODES
+    deregister_supernodes(eee);
+#else
     send_deregister( eee, &(eee->supernode));
+#endif
 
     closesocket(eee->udp_sock);
     tuntap_close(&(eee->device));

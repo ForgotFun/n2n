@@ -55,6 +55,9 @@ typedef enum n2n_pc n2n_pc_t;
 #define N2N_FLAGS_OPTIONS               0x0080
 #define N2N_FLAGS_SOCKET                0x0040
 #define N2N_FLAGS_FROM_SUPERNODE        0x0020
+#ifdef N2N_MULTIPLE_SUPERNODES
+#define N2N_FLAGS_SUPERNODE_ACC         0x0100
+#endif
 
 /* The bits in flag that are the packet type */
 #define N2N_FLAGS_TYPE_MASK             0x001f  /* 0 - 31 */
@@ -168,7 +171,12 @@ struct n2n_REGISTER_SUPER_ACK
     uint8_t             num_sn;         /* Number of supernodes that were send
                                          * even if we cannot store them all. If
                                          * non-zero then sn_bak is valid. */
+
+#ifdef N2N_MULTIPLE_SUPERNODES
+    n2n_sock_t          sn_bak[4];
+#else
     n2n_sock_t          sn_bak;         /* Socket of the first backup supernode */
+#endif
 
 };
 

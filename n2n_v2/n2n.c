@@ -122,7 +122,7 @@ void traceEvent(int eventTraceLevel, char* file, int line, char * format, ...) {
       snprintf(out_buf, sizeof(out_buf), "%s%s", extra_msg, buf);
       syslog(LOG_INFO, "%s", out_buf);
     } else {
-      snprintf(out_buf, sizeof(out_buf), "%s [%11s:%4d] %s%s", theDate, file, line, extra_msg, buf);
+      snprintf(out_buf, sizeof(out_buf), "%s [%18s:%4d] %s%s", theDate, file, line, extra_msg, buf);
       printf("%s\n", out_buf);
       fflush(stdout);
     }
@@ -432,6 +432,37 @@ extern char * sock_to_cstr( n2n_sock_str_t out,
                       (a[0] & 0xff), (a[1] & 0xff), (a[2] & 0xff), (a[3] & 0xff), sock->port );
         return out;
     }
+}
+
+extern n2n_sock_t * sock_from_cstr( n2n_sock_t *out,
+                                    const n2n_sock_str_t str )
+{
+    if ( NULL == out ) { return NULL; }
+    memset(out, 0, sizeof(n2n_sock_t));
+
+    if (strchr(str, '.'))
+    {
+        /* IPv4 */
+        out->family = AF_INET;
+        unsigned int ipv4[IPV4_SIZE];
+        unsigned int port;
+        sscanf(str, "%d.%d.%d.%d:%d", &ipv4[0], &ipv4[1], &ipv4[2], &ipv4[3], &port);
+        out->addr.v4[0] = ipv4[0];
+        out->addr.v4[1] = ipv4[1];
+        out->addr.v4[2] = ipv4[2];
+        out->addr.v4[3] = ipv4[3];
+        out->port = port;
+        return out;
+    }
+    else if (strchr(str, ':'))
+    {
+        /* INET6 not written yet */
+        out->family = AF_INET6;
+        sscanf(str, "XXXX:%hu", &out->port);
+        return out;
+    }
+
+    return NULL;
 }
 
 /* @return zero if the two sockets are equivalent. */
